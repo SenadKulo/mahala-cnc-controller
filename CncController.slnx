@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CncController.App/CncController.App.csproj" />
+    <Project Path="src/CncController.Remote/CncController.Remote.csproj" />
+    <Project Path="src/CncController.WinForms/CncController.WinForms.csproj" />
+    <Project Path="src/GrblCore/GrblCore.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CncController.App.Tests/CncController.App.Tests.csproj" />
+    <Project Path="tests/GrblCore.Tests/GrblCore.Tests.csproj" />
+  </Folder>
+</Solution>

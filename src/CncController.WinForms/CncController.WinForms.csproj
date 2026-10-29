@@ -1,0 +1,51 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CncController.App\CncController.App.csproj" />
+    <ProjectReference Include="..\GrblCore\GrblCore.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The Mahala Workshop logo with "CNC" and the laser dot; the same as the website's icons. -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <Product>The Mahala Workshop - CNC Controller</Product>
+    <!-- The released version is given by installer/build.ps1 (-p:Version=...); this one is for builds in Visual Studio. -->
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <!-- Remote access goes through the owner's own website (src/CncController.Web), which stays private: without it
+       (the public repo) the window doesn't offer "Daljinski pristup". -->
+  <PropertyGroup Condition="Exists('..\CncController.Web\CncController.Web.csproj')">
+    <DefineConstants>$(DefineConstants);REMOTE_ACCESS</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The window shows the website's machine page (WebView2). -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+    <!-- The QR code a phone scans to open the page in the local network (LanDialog). -->
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <!-- Installing and updating (installer/build.ps1 packs it with the vpk tool of the same version). -->
+    <PackageReference Include="Velopack" Version="1.2.161" />
+  </ItemGroup>
+
+  <!-- The package always references its WPF control too, whose WindowsBase clashes with this WinForms app (MSB3277). -->
+  <Target Name="RemoveWebView2Wpf" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <!-- The machine page (src/CncController.Page, the same the website serves) next to the program, so it works without
+         internet; the window's own shells (desktop, local network) beside it. -->
+    <Content Include="..\CncController.Page\**\*" LinkBase="ui" CopyToOutputDirectory="PreserveNewest" />
+    <!-- LinkBase only moves files from outside the project, so these name their place themselves. -->
+    <Content Include="Page\**\*" Link="ui\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

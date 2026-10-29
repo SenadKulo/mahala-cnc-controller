@@ -1,0 +1,395 @@
+<!--
+  The machine page, the same on the website (Pages/Index.cshtml puts it in its layout) and in the desktop window
+  (CncController.WinForms/Page/desktop.html loads it into WebView2). js/machine.js drives it, css/site.css styles it.
+  .web-only parts show only on the website (and in the local network, lan.js), .desktop-only parts only in the desktop
+  window; .account-only parts (logout, phone notifications) only on the website.
+  Sections: CNC, Posao, Log i komande on the left; Ručno upravljanje and the drawing on the right.
+  On a phone, data-tab says under which tab of the bottom bar a section shows.
+  Texts are Bosnian; data-en gives the English of an element's own text, data-en-title (-placeholder, -aria-label,
+  -confirm) of its attributes, and machine.js switches them with the program's language.
+-->
+<svg class="d-none" aria-hidden="true">
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.5v15l12.5-7.5z" /></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect fill="currentColor" x="6" y="4.5" width="4" height="15" rx="1" /><rect fill="currentColor" x="14" y="4.5" width="4" height="15" rx="1" /></symbol>
+    <symbol id="i-resume" viewBox="0 0 24 24"><path fill="currentColor" d="M5 4.5v15l10-7.5z" /><rect fill="currentColor" x="16" y="4.5" width="3" height="15" rx="1" /></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect fill="currentColor" x="5" y="5" width="14" height="14" rx="2" /></symbol>
+    <symbol id="i-frame" viewBox="0 0 24 24"><rect fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3" x="4" y="4" width="16" height="16" rx="2" /></symbol>
+    <symbol id="i-resume-from" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h13" /><path d="M12 7l5 5-5 5" /><path d="M20 5v14" /></g></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></g></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3" /><path d="M7 8l5-5 5 5" /><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" /></g></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18" /></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z" /><circle cx="12" cy="10" r="2.5" /></g></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="7" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /></g></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /></g></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /></g></symbol>
+    <symbol id="i-laser" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2" /></g></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" /><circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" /></g></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 2h8.2L22 7.9v8.2L16.1 22H7.9L2 16.1V7.9z" /><path d="M12 8v5" /><path d="M12 16.5v.01" /></g></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" /></g></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M8 7l4-4 4 4M8 17l4 4 4-4" /></g></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8M3 21h18" /></g></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 6h16M4 12h16M4 18h10" /></symbol>
+</svg>
+
+<header class="statusbar">
+    <div class="brand">
+        <span class="brand-name">THE <span>MAHALA</span> WORKSHOP</span>
+        <span class="brand-tool">CNC Controller</span>
+    </div>
+    <span id="statePill" class="pill"><span class="dot"></span><span id="state">-</span></span>
+    <span id="laser" class="pill"><span class="dot"></span><span id="laserText" data-en="laser off">laser ugašen</span></span>
+    <div class="top-progress">
+        <div class="track"><div id="topProgress"></div></div>
+        <div id="topProgressText" class="top-progress-text"></div>
+    </div>
+    <span id="connection" class="connection tone-muted" data-en="Not connected">Nije spojeno</span>
+    <button type="button" class="btn btn-emergency btn-icon" data-command="Reset" data-can="canReset" disabled
+            title="CNC staje odmah i laser se gasi (Grbl reset). Prekinuti posao se može nastaviti sa „Nastavi od...“. Pauza ne gasi laser."
+            data-en-title="The CNC stops at once and the laser goes off (Grbl reset). An interrupted job can be continued with &quot;Resume from...&quot;. Pause doesn't switch the laser off.">
+        <svg class="icon"><use href="#i-alert" /></svg><span data-en="Emergency stop">Hitni stop</span><span class="desktop-only d-none small fw-normal opacity-75">Esc</span>
+    </button>
+    <button type="button" id="language" class="btn btn-sm btn-ghost-wood" title="Prebaci program na engleski" data-en-title="Switch the program to Bosnian"
+            data-en="BS">EN</button>
+    <button type="button" id="logout" class="btn btn-sm btn-ghost-wood web-only account-only" data-en="Log out">Odjava</button>
+</header>
+
+<div class="page">
+    <div id="siteStatus" class="alert alert-warning d-none"></div>
+    <div id="desktopStatus" class="alert alert-secondary d-none"></div>
+
+    <div id="question" class="alert alert-warning d-none">
+        <div class="fw-semibold mb-1" data-en="Question from the desktop program">Pitanje sa desktop programa</div>
+        <pre id="questionText" class="question-text mb-2"></pre>
+        <div class="d-flex gap-2">
+            <button type="button" id="questionYes" class="btn btn-start" data-en="Yes, restore the position">Da, vrati poziciju</button>
+            <button type="button" id="questionNo" class="btn btn-quiet" data-en="No">Ne</button>
+        </div>
+    </div>
+
+    <div id="alert" class="alert alert-danger alert-dismissible d-none">
+        <div class="small fw-semibold" id="alertTime"></div>
+        <pre id="alertText" class="question-text mb-0"></pre>
+        <button type="button" id="alertClose" class="btn-close" aria-label="Zatvori" data-en-aria-label="Close"></button>
+    </div>
+
+    <div class="layout">
+        <div class="column">
+            <section class="card area-machine" data-tab="control">
+                <div class="card-body">
+                    <div class="card-top">
+                        <h2 class="card-title">CNC</h2>
+                        <div class="d-flex gap-2">
+                            <select id="port" class="form-select form-select-sm form-select-pill w-auto" aria-label="Port"></select>
+                            <select id="baud" class="form-select form-select-sm form-select-pill w-auto" aria-label="Brzina porta (baud)" title="Brzina porta (baud)"
+                                    data-en-aria-label="Port speed (baud)" data-en-title="Port speed (baud)"></select>
+                            <button type="button" id="connectButton" class="btn btn-sm btn-wood text-nowrap" disabled data-en="Connect">Spoji</button>
+                        </div>
+                    </div>
+                    <div id="dro" class="dro" title="Radna pozicija; sitno ispod: apsolutna" data-en-title="Work position; small below: absolute">
+                        <div class="dro-axis"><div class="dro-head"><span class="dro-label">X</span><span class="dro-unit">mm</span></div><span id="workX" class="dro-value">—</span><span id="machineX" class="dro-machine"></span></div>
+                        <div class="dro-axis"><div class="dro-head"><span class="dro-label">Y</span><span class="dro-unit">mm</span></div><span id="workY" class="dro-value">—</span><span id="machineY" class="dro-machine"></span></div>
+                        <div class="dro-axis z"><div class="dro-head"><span class="dro-label">Z</span><span class="dro-unit">mm</span></div><span id="workZ" class="dro-value">—</span><span id="machineZ" class="dro-machine"></span></div>
+                    </div>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+                        <div id="remembered" class="remembered flex-grow-1"><svg class="icon"><use href="#i-pin" /></svg><span id="rememberedText"></span></div>
+                        <button type="button" id="unlockButton" class="btn btn-pause d-none" data-command="Unlock" data-can="canSendCommands" disabled
+                                title="Grbl je u alarmu i ne prima komande. Provjeri CNC, pa skini alarm ($X)."
+                                data-en-title="Grbl is in an alarm and takes no commands. Check the CNC, then clear the alarm ($X)." data-en="Unlock ($X)">Otključaj ($X)</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card area-job" data-tab="job">
+                <div class="card-body">
+                    <div class="card-top">
+                        <h2 class="card-title" data-en="Job">Posao</h2>
+                        <button type="button" id="openFile" class="btn btn-sm btn-ghost-wood btn-icon desktop-only d-none" data-can="canLoadFile" disabled
+                                title="Učitaj G-code (Ctrl+O). Originalni ArtCAM fajl se prvo konvertuje za laser."
+                                data-en-title="Load G-code (Ctrl+O). An original ArtCAM file is converted for the laser first."><svg class="icon"><use href="#i-file" /></svg><span data-en="Open file...">Otvori fajl...</span></button>
+                    </div>
+                    <form id="uploadForm" method="post" enctype="multipart/form-data" action="/?handler=Upload" class="d-flex gap-2 mb-2 web-only">
+                        <input type="file" name="file" id="uploadFile" class="form-control form-control-sm"
+                               accept=".tap,.nc,.gcode,.ngc,.txt" aria-label="G-code fajl" data-en-aria-label="G-code file" />
+                        <button type="submit" id="uploadButton" class="btn btn-sm btn-ghost-wood btn-icon text-nowrap" disabled><svg class="icon"><use href="#i-upload" /></svg><span data-en="Upload">Učitaj</span></button>
+                    </form>
+                    <div class="file-box">
+                        <svg class="icon"><use href="#i-file" /></svg>
+                        <div class="flex-grow-1" style="min-width: 0">
+                            <div id="file" class="fw-semibold text-truncate" data-en="No file loaded">Nema učitanog fajla</div>
+                            <div id="fileInfo" class="small text-muted text-truncate"></div>
+                        </div>
+                        <button type="button" id="closeFile" class="icon-button d-none" data-command="CloseFile" data-can="canCloseFile" disabled
+                                aria-label="Zatvori fajl" title="Zatvori fajl (crtež i podaci o poslu nestaju; zapamćeni prekinuti posao ostaje)."
+                                data-en-aria-label="Close file" data-en-title="Close the file (the drawing and the job's data go away; a remembered interrupted job stays)."><svg class="icon"><use href="#i-x" /></svg></button>
+                    </div>
+
+                    <div id="convertPanel" class="panel mt-2 d-none">
+                        <div class="small mb-2"><span data-en="Original ArtCAM file">Originalni ArtCAM fajl</span> <span id="convertFile" class="fw-semibold"></span>: <span data-en="feed (mm/min) for each toolpath.">feed (mm/min) za svaku putanju.</span></div>
+                        <div class="table-responsive">
+                            <table class="table table-sm small mb-2">
+                                <thead><tr><th>#</th><th data-en="Tool">Alat</th><th data-en="Contours">Konture</th><th data-en="Passes">Prolazi</th><th>Feed</th></tr></thead>
+                                <tbody id="convertRows"></tbody>
+                            </table>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button" id="convertStart" class="btn btn-wood flex-fill" disabled data-en="Convert and load">Konvertuj i učitaj</button>
+                            <button type="button" id="convertCancel" class="btn btn-quiet" data-en="Cancel">Odustani</button>
+                        </div>
+                    </div>
+
+                    <div class="job-overview mt-3">
+                        <div class="ring">
+                            <svg viewBox="0 0 120 120" aria-hidden="true">
+                                <circle class="ring-track" cx="60" cy="60" r="52" />
+                                <circle id="ringDone" class="ring-done" cx="60" cy="60" r="52" stroke-dasharray="0 326.7" />
+                            </svg>
+                            <div class="ring-text"><div id="ringPercent" class="ring-percent">—</div><div id="ringCount" class="ring-count"></div></div>
+                        </div>
+                        <div class="stats">
+                            <div><div class="stat-label" data-en="Left">Preostalo</div><div id="remaining" class="stat-value">—</div></div>
+                            <div><div class="stat-label" data-en="Done around">Gotovo oko</div><div id="finish" class="stat-value">—</div></div>
+                            <div><div class="stat-label" data-en="Running for">Radi već</div><div id="elapsed" class="stat-value small-value">—</div></div>
+                            <div><div class="stat-label" data-en="Line">Linija</div><div id="currentLine" class="stat-value mono">—</div></div>
+                        </div>
+                    </div>
+
+                    <div class="button-grid cols-4 mt-3">
+                        <button type="button" class="btn btn-start btn-icon" data-command="Start" data-can="canStart" disabled><svg class="icon"><use href="#i-play" /></svg>Start</button>
+                        <button type="button" class="btn btn-pause btn-icon hide-phone" data-command="Pause" data-can="canPause" disabled
+                                title="Pauza (Space na desktopu). Laser ostaje upaljen." data-en-title="Pause (Space on the desktop). The laser stays on."><svg class="icon"><use href="#i-pause" /></svg><span data-en="Pause">Pauza</span></button>
+                        <button type="button" class="btn btn-resume btn-icon hide-phone" data-command="Resume" data-can="canResume" disabled
+                                title="Nastavi nakon pauze (F5 na desktopu)." data-en-title="Resume after a pause (F5 on the desktop)."><svg class="icon"><use href="#i-resume" /></svg><span data-en="Resume">Nastavi</span></button>
+                        <button type="button" class="btn btn-stop btn-icon" data-command="Stop" data-can="canStop" disabled
+                                data-confirm="Zaustaviti posao? Pokreti koji su već u Grbl baferu će se još izvršiti."
+                                data-en-confirm="Stop the job? Moves already in Grbl's buffer will still run."><svg class="icon"><use href="#i-stop" /></svg>Stop</button>
+                    </div>
+                    <div class="button-grid mt-2">
+                        <button type="button" class="btn btn-quiet btn-icon" data-command="Frame" data-can="canFrame" disabled
+                                title="Obiđi rubove crteža ugašenim laserom, da provjeriš da li stane na materijal."
+                                data-en-title="Trace the drawing's edges with the laser off, to check that it fits on the material."><svg class="icon"><use href="#i-frame" /></svg><span data-en="Frame">Okvir</span></button>
+                        <button type="button" id="resumeOpen" class="btn btn-quiet btn-icon" data-can="canResumeFrom" disabled
+                                title="Nastavi prekinuti posao od izabrane linije." data-en-title="Continue an interrupted job from a chosen line."><svg class="icon"><use href="#i-resume-from" /></svg><span data-en="Resume from...">Nastavi od...</span></button>
+                    </div>
+
+                    <div id="resumePanel" class="panel mt-2 d-none">
+                        <div id="resumeStopped" class="small mb-2"></div>
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="resumeLine" class="small text-nowrap" data-en="Line in the file:">Linija u fajlu:</label>
+                            <input type="number" id="resumeLine" class="form-control form-control-sm" min="1" step="1" />
+                        </div>
+                        <pre id="resumePreview" class="resume-preview mt-2 mb-2"></pre>
+                        <div class="d-flex gap-2">
+                            <button type="button" id="resumeStart" class="btn btn-start flex-fill" disabled data-en="Resume from this line">Nastavi od ove linije</button>
+                            <button type="button" id="resumeCancel" class="btn btn-quiet" data-en="Cancel">Odustani</button>
+                        </div>
+                    </div>
+
+                    <!-- The job's timeline: when it started, compressor breaks and restarts, when it should be done. -->
+                    <div id="timelineBlock" class="mt-3 d-none">
+                        <div class="timeline-labels"><span id="timelineStart"></span><span id="timelineNow"></span><span id="timelineEnd"></span></div>
+                        <div id="timeline" class="timeline">
+                            <div id="timelineDone" class="timeline-done"></div>
+                            <div id="timelineMarks"></div>
+                            <div id="timelineCursor" class="timeline-now"></div>
+                        </div>
+                        <div class="legend mt-2">
+                            <span><span class="swatch" style="background: rgba(212, 163, 115, .55)"></span><span data-en="running">radi</span></span>
+                            <span><span class="swatch" style="background: var(--tone-orange)"></span><span><span data-en="scheduled break">planirana pauza</span> (<span id="breakCount">0</span>)</span></span>
+                            <span><span class="swatch" style="background: var(--tone-red)"></span><span><span data-en="restart and resume">restart i nastavak</span> (<span id="restartCount">0</span>)</span></span>
+                        </div>
+                    </div>
+
+                    <div class="switches mt-3">
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="autoResume" data-setting="AutoResume" disabled />
+                            <label class="form-check-label small" for="autoResume" data-en="Resume by itself after a restart">Sam nastavi nakon restarta</label>
+                        </div>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="compressorPause" data-setting="CompressorPause" disabled />
+                            <label class="form-check-label small" for="compressorPause" data-en="Scheduled break"
+                                   title="Pauza sa ugašenim laserom u poznatim razmacima, npr. dok se pale kompresori koji mogu restartovati Arduino. Ugašena dok je ne uključiš."
+                                   data-en-title="A break with the laser off at known intervals, e.g. while compressors that can restart the Arduino switch on. Off until you turn it on.">Planirana pauza</label>
+                        </div>
+                        <a href="#" id="compressorText" class="small ms-auto" title="Raspored pauze: kada počinje i koliko često. Klikni za izmjenu."
+                           data-en-title="Break schedule: when it starts and how often. Click to change."></a>
+                    </div>
+                    <form id="compressorForm" class="panel mt-2 d-none">
+                        <div class="small mb-2" data-en="The break starts at (time on the CNC's computer), then every:">Pauza počinje u (vrijeme na računaru uz CNC), pa svakih:</div>
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <input type="time" id="compressorStart" class="form-control form-control-sm w-auto" step="1" required aria-label="Vrijeme paljenja" data-en-aria-label="Start time" />
+                            <input type="number" id="compressorPeriod" class="form-control form-control-sm w-auto" min="0.5" max="240" step="0.1" required aria-label="Period u minutama" data-en-aria-label="Period in minutes" />
+                            <span class="small">min</span>
+                        </div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button type="submit" class="btn btn-sm btn-wood flex-fill" data-can="always" data-en="Save">Spremi</button>
+                            <button type="button" id="compressorClear" class="btn btn-sm btn-stop" data-can="always" data-en="Clear schedule">Obriši raspored</button>
+                            <button type="button" id="compressorCancel" class="btn btn-sm btn-quiet" data-en="Cancel">Odustani</button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <section class="card area-log" data-tab="log">
+                <div class="card-body pb-0">
+                    <div class="card-top mb-1">
+                        <h2 class="card-title" data-en="Log and commands">Log i komande</h2>
+                        <button type="button" id="settingsRead" class="btn btn-sm btn-ghost-wood btn-icon text-nowrap" data-can="canGrblSettings" disabled
+                                title="Pregled i izmjena Grbl postavki ($$). Samo kad CNC miruje."
+                                data-en-title="View and change Grbl's settings ($$). Only while the CNC is idle."><svg class="icon"><use href="#i-sliders" /></svg><span data-en="Grbl settings">Grbl postavke</span></button>
+                    </div>
+                </div>
+                <div id="log" class="log"></div>
+                <div class="card-body border-top">
+                    <form id="sendForm" class="d-flex gap-2">
+                        <label class="command-box">
+                            <input type="text" id="sendText" maxlength="50" autocomplete="off" autocapitalize="characters"
+                                   placeholder="G-code ili Grbl komanda, npr. G0 X10" aria-label="G-code komanda"
+                                   data-en-placeholder="G-code or Grbl command, e.g. G0 X10" data-en-aria-label="G-code command" />
+                        </label>
+                        <button type="submit" id="sendButton" class="btn btn-wood" data-can="canSendCommands" disabled data-en="Send">Pošalji</button>
+                    </form>
+                    <div id="settingsBody" class="mt-3 d-none">
+                        <div class="table-responsive settings-table">
+                            <table class="table table-sm small mb-0 align-middle">
+                                <tbody id="settingsRows"></tbody>
+                            </table>
+                        </div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button type="button" id="settingsSave" class="btn btn-sm btn-wood flex-fill" data-can="canGrblSettings" disabled data-en="Save changes to Grbl">Spremi izmjene u Grbl</button>
+                            <button type="button" id="settingsClose" class="btn btn-sm btn-quiet" data-en="Close">Zatvori</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card area-notify web-only account-only" data-tab="log">
+                <div class="card-body d-flex flex-wrap align-items-center gap-3">
+                    <svg class="icon" style="width: 1.2rem; height: 1.2rem; color: var(--tone-green)"><use href="#i-bell" /></svg>
+                    <div class="flex-grow-1" style="min-width: 12rem">
+                        <div class="fw-semibold" data-en="Notifications on this device">Obavještenja na ovom uređaju</div>
+                        <div id="pushStatus" class="small text-muted"></div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" id="pushOn" class="btn btn-sm btn-wood d-none" data-en="Turn on notifications">Uključi obavještenja</button>
+                        <button type="button" id="pushTest" class="btn btn-sm btn-ghost-wood d-none" data-en="Test message">Probna poruka</button>
+                        <button type="button" id="pushOff" class="btn btn-sm btn-stop d-none" data-en="Turn off">Isključi</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="column">
+            <section class="card area-manual" data-tab="control">
+                <div class="card-body">
+                    <h2 class="card-title mb-3" data-en="Manual control">Ručno upravljanje</h2>
+                    <!-- X/Y keys around a centre that shows the step, Z beside them. -->
+                    <div class="d-flex flex-wrap align-items-center column-gap-4 row-gap-3">
+                        <div class="jog-pad">
+                            <button type="button" class="jog-key jog-y-plus" data-jog="Y" data-sign="1" data-can="canMove" disabled>
+                                <svg class="jog-arrow" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1 9.5 8.5H.5z" /></svg>Y+
+                            </button>
+                            <button type="button" class="jog-key jog-x-minus" data-jog="X" data-sign="-1" data-can="canMove" disabled>
+                                <svg class="jog-arrow left" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1 9.5 8.5H.5z" /></svg>X−
+                            </button>
+                            <div class="jog-center" title="Korak" data-en-title="Step"><span id="jogStepShown">1</span><small>mm</small></div>
+                            <button type="button" class="jog-key jog-x-plus" data-jog="X" data-sign="1" data-can="canMove" disabled>
+                                <svg class="jog-arrow right" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1 9.5 8.5H.5z" /></svg>X+
+                            </button>
+                            <button type="button" class="jog-key jog-y-minus" data-jog="Y" data-sign="-1" data-can="canMove" disabled>
+                                <svg class="jog-arrow down" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1 9.5 8.5H.5z" /></svg>Y−
+                            </button>
+                            <button type="button" class="jog-key jog-z jog-z-plus" data-jog="Z" data-sign="1" data-can="canMove" disabled>
+                                <svg class="jog-arrow" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1 9.5 8.5H.5z" /></svg>Z+
+                            </button>
+                            <div class="jog-z-label">Z</div>
+                            <button type="button" class="jog-key jog-z jog-z-minus" data-jog="Z" data-sign="-1" data-can="canMove" disabled>
+                                <svg class="jog-arrow down" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1 9.5 8.5H.5z" /></svg>Z−
+                            </button>
+                        </div>
+                        <div>
+                            <div class="small text-muted mb-2" data-en="Step (mm)">Korak (mm)</div>
+                            <div id="jogSteps" class="jog-steps" role="group" aria-label="Korak" data-en-aria-label="Step"></div>
+                            <div class="form-check form-switch mt-3 mb-0 desktop-only d-none">
+                                <input class="form-check-input" type="checkbox" role="switch" id="keyboardJog" />
+                                <label class="form-check-label small" for="keyboardJog" title="Strelice pomjeraju X/Y, a PgUp/PgDn Z, za jedan korak po pritisku (držanje tipke ne ponavlja)."
+                                       data-en-title="The arrows move X/Y and PgUp/PgDn Z, one step per press (holding a key doesn't repeat)." data-en="Keyboard arrows">Strelice na tastaturi</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="button-grid cols-4 mt-3">
+                        <button type="button" class="btn btn-tile btn-icon" data-command="SetZero" data-can="canSetPosition" disabled
+                                title="Trenutno mjesto postaje radna nula X0 Y0 Z0. Grbl je pamti i nakon reseta."
+                                data-en-title="The current spot becomes the work zero X0 Y0 Z0. Grbl keeps it after a reset too."><svg class="icon icon-wood"><use href="#i-target" /></svg><span data-en="Set zero">Postavi nulu</span></button>
+                        <button type="button" class="btn btn-tile btn-icon" data-command="RestorePosition" data-can="canRestorePosition" disabled
+                                data-confirm="Postaviti radnu poziciju na zapamćenu? Samo ako CNC nije pomjeran otkako je zapamćena."
+                                data-en-confirm="Set the work position to the remembered one? Only if the CNC wasn't moved since it was remembered."><svg class="icon icon-wood"><use href="#i-history" /></svg><span data-en="Restore remembered">Vrati zapamćenu</span></button>
+                        <button type="button" class="btn btn-tile btn-icon" data-command="GoToZero" data-can="canMove" disabled
+                                title="Ugasi laser i idi brzim hodom na radnu nulu." data-en-title="Switch the laser off and go to the work zero at rapid speed."><svg class="icon icon-wood"><use href="#i-home" /></svg><span data-en="Go to 0,0,0">Idi na 0,0,0</span></button>
+                        <button type="button" id="laserButton" class="btn btn-stop btn-icon" data-can="canSendCommands" disabled
+                                title="M3 pali laser, M5 ga gasi." data-en-title="M3 switches the laser on, M5 off."><svg class="icon"><use href="#i-laser" /></svg><span id="laserButtonText" data-en="Laser on">Upali laser</span></button>
+                    </div>
+                    <!-- Grbl 0.9+ only: there the laser burns at the S value, which is 0 after a reset. -->
+                    <div id="laserPowerRow" class="laser-power mt-3 d-none">
+                        <label for="laserPower" class="small text-muted" data-en="Laser power (S)">Snaga lasera (S)</label>
+                        <input type="number" id="laserPower" class="form-control form-control-sm" min="1" step="1" inputmode="numeric"
+                               title="Šalje se uz „Upali laser“ i na početku posla. Grbl 1.1 nakon reseta ima S0, pa bez ovoga laser ne bi svijetlio."
+                               data-en-title="Sent with &quot;Laser on&quot; and at the start of a job. After a reset Grbl 1.1 has S0, so without this the laser wouldn't light." />
+                        <span id="laserPowerMax" class="small text-muted"></span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card drawing-card area-drawing" data-tab="drawing">
+                <div id="drawing" class="drawing">
+                    <div class="drawing-hint"><span id="gridText"></span><span id="cutSize"></span></div>
+                    <canvas id="layerBase"></canvas>
+                    <canvas id="layerDone"></canvas>
+                    <canvas id="layerLaser"></canvas>
+                </div>
+                <div class="drawing-legend legend">
+                    <span><span class="swatch line" style="background: #5b7fa8"></span><span data-en="cut">rez</span></span>
+                    <span><span class="swatch line" style="background: #e0a060"></span><span data-en="done">urađeno</span></span>
+                    <span><span class="swatch line" style="background: transparent; border-top: 1px dashed #75818d"></span><span data-en="rapid">prazni hod</span></span>
+                    <span><span class="swatch" style="border-radius: 50%; background: #ff4d57"></span>laser</span>
+                    <span><span class="swatch" style="border-radius: 50%; background: var(--tone-orange)"></span><span data-en="break">pauza</span></span>
+                    <span><span class="swatch" style="border-radius: 50%; background: var(--tone-red)"></span>restart</span>
+                    <span><span class="swatch line" style="background: var(--tone-green)"></span><span data-en="zero">nula</span></span>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- The desktop window's own things: remote access, and going back to the old view. -->
+    <div id="hostBar" class="host-bar desktop-only d-none">
+        <a href="#" id="remoteSettings" title="Pristup CNC-u preko web stranice (mobitel, drugi računar). Klikni za podešavanje."
+           data-en-title="Access to the CNC through the website (phone, another computer). Click to set it up.">Daljinski pristup: …</a>
+        <a href="#" id="lanSettings" title="Mobitel ili drugi računar na istoj mreži (WiFi), bez sajta i interneta. Klikni za adresu, kod i QR kod."
+           data-en-title="A phone or another computer on the same network (Wi-Fi), without the website or the internet. Click for the address, code and QR code.">Lokalna mreža: …</a>
+        <a href="#" id="updateLink" class="d-none"></a>
+        <span id="versionText" class="ms-auto text-muted"></span>
+        <a href="#" id="classicView" title="Vrati stari prikaz prozora (dok se novi isprobava na CNC-u)."
+           data-en-title="Back to the window's old view (while the new one is being tried on the CNC)." data-en="Old view">Stari prikaz</a>
+    </div>
+</div>
+
+<footer class="site-footer web-only">
+    <span><span class="brand-name">THE <span>MAHALA</span> WORKSHOP</span> · CNC Controller</span>
+    <a href="https://mahalaworkshop.com" target="_blank" rel="noopener">mahalaworkshop.com</a>
+</footer>
+
+<!-- Phone: the buttons that must always be under the thumb, and the tabs. -->
+<nav class="mobile-bar" aria-label="Upravljanje i kartice" data-en-aria-label="Controls and tabs">
+    <div class="mobile-actions">
+        <button type="button" class="btn btn-pause btn-icon" data-command="Pause" data-can="canPause" disabled><svg class="icon"><use href="#i-pause" /></svg><span data-en="Pause">Pauza</span></button>
+        <button type="button" class="btn btn-resume btn-icon" data-command="Resume" data-can="canResume" disabled><svg class="icon"><use href="#i-resume" /></svg><span data-en="Resume">Nastavi</span></button>
+        <button type="button" class="btn btn-emergency btn-icon" data-command="Reset" data-can="canReset" disabled><svg class="icon"><use href="#i-alert" /></svg><span data-en="Emergency stop">Hitni stop</span></button>
+    </div>
+    <div class="mobile-tabs">
+        <button type="button" data-tab-button="control" aria-pressed="true"><svg class="icon"><use href="#i-move" /></svg><span data-en="Control">Upravljanje</span></button>
+        <button type="button" data-tab-button="job" aria-pressed="false"><svg class="icon"><use href="#i-file" /></svg><span data-en="Job">Posao</span></button>
+        <button type="button" data-tab-button="drawing" aria-pressed="false"><svg class="icon"><use href="#i-chart" /></svg><span data-en="Drawing">Crtež</span></button>
+        <button type="button" data-tab-button="log" aria-pressed="false"><svg class="icon"><use href="#i-list" /></svg>Log</button>
+    </div>
+</nav>
+
+<div id="message" class="message alert d-none" role="status"></div>

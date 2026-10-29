@@ -1,0 +1,24 @@
+# Builds the program and runs the tests on every push and pull request.
+# (Releases and code signing come later: a tag will build the installer and have it signed.)
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: dotnet build CncController.slnx -c Release
+
+      - name: Test
+        run: dotnet test CncController.slnx -c Release --no-build
