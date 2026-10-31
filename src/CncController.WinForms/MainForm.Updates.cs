@@ -13,19 +13,23 @@ public partial class MainForm
     {
         if (Settings.AcceptedTerms >= TermsDialog.Version)
             return true;
-        using var dialog = new TermsDialog(_session.Language);
+        using var dialog = new TermsDialog(_session.Language, Settings.CheckForUpdates);
         if (dialog.ShowDialog(this) != DialogResult.OK)
         {
             Close();
             return false;
         }
         Settings.AcceptedTerms = TermsDialog.Version;
+        Settings.CheckForUpdates = dialog.CheckForUpdates;
         _session.SaveSettings();
         return true;
     }
 
+    /// <summary>Only if allowed (<see cref="AppSettings.CheckForUpdates"/>): it is the one connection the user didn't set up.</summary>
     void StartUpdateChecks()
     {
+        if (!Settings.CheckForUpdates)
+            return;
         _ = _updates.CheckAsync();
         var timer = new System.Windows.Forms.Timer(components!) { Interval = (int)UpdateCheckInterval.TotalMilliseconds };
         timer.Tick += (_, _) => _ = _updates.CheckAsync();

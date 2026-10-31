@@ -17,6 +17,7 @@ partial class TermsDialog
     {
         txtTerms = new TextBox();
         chkAccept = new CheckBox();
+        chkUpdates = new CheckBox();
         btnAccept = new Button();
         btnDecline = new Button();
         SuspendLayout();
@@ -41,6 +42,14 @@ partial class TermsDialog
         chkAccept.Text = "Pročitao sam ovo i prihvatam";
         chkAccept.CheckedChanged += chkAccept_CheckedChanged;
         //
+        // chkUpdates
+        //
+        chkUpdates.AutoSize = true;
+        chkUpdates.Location = new Point(12, 469);
+        chkUpdates.Name = "chkUpdates";
+        chkUpdates.TabIndex = 1;
+        chkUpdates.Text = "Provjeravaj nove verzije (mahalaworkshop.com)";
+        //
         // btnAccept
         //
         btnAccept.DialogResult = DialogResult.OK;
@@ -48,7 +57,7 @@ partial class TermsDialog
         btnAccept.Location = new Point(364, 476);
         btnAccept.Name = "btnAccept";
         btnAccept.Size = new Size(89, 30);
-        btnAccept.TabIndex = 1;
+        btnAccept.TabIndex = 2;
         btnAccept.Text = "Prihvatam";
         //
         // btnDecline
@@ -57,7 +66,7 @@ partial class TermsDialog
         btnDecline.Location = new Point(459, 476);
         btnDecline.Name = "btnDecline";
         btnDecline.Size = new Size(89, 30);
-        btnDecline.TabIndex = 2;
+        btnDecline.TabIndex = 3;
         btnDecline.Text = "Odustani";
         //
         // TermsDialog
@@ -69,6 +78,7 @@ partial class TermsDialog
         ClientSize = new Size(560, 518);
         Controls.Add(txtTerms);
         Controls.Add(chkAccept);
+        Controls.Add(chkUpdates);
         Controls.Add(btnAccept);
         Controls.Add(btnDecline);
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -87,6 +97,7 @@ partial class TermsDialog
 
     private TextBox txtTerms;
     private CheckBox chkAccept;
+    private CheckBox chkUpdates;
     private Button btnAccept;
     private Button btnDecline;
 }

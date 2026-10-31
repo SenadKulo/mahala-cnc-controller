@@ -141,6 +141,9 @@ public sealed class AppSettings
 
     public const string DefaultUpdateUrl = "https://mahalaworkshop.com/cnc/releases";
 
+    /// <summary>Look for new versions at <see cref="UpdateUrl"/>; the only connection the program makes on its own, so it can be turned off (terms dialog).</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
     /// <summary>File the settings were loaded from and are saved to; null keeps them in memory only (tests).</summary>
     [JsonIgnore]
     public string? FilePath { get; private set; }

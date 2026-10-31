@@ -55,6 +55,31 @@ this repo, restored by `dotnet tool restore`). The result is in `artifacts\relea
 - `src/CncController.Remote`: the messages between the page and the program.
 - `tests/`: xUnit tests; most run the program against the simulator.
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+- The installer and the program are built from this repository by GitHub Actions
+  ([release.yml](.github/workflows/release.yml)) when a version tag is pushed; only these builds are signed.
+- Every signing request is approved by hand.
+- Committers and reviewers: [Senad Kulo](https://github.com/SenadKulo)
+- Approvers: [Senad Kulo](https://github.com/SenadKulo)
+
+Releases up to and including 1.0.1 are not signed.
+
+## Privacy policy
+
+This program will not transfer any information to other networked systems unless specifically requested by the user
+or the person installing or operating it, with one exception: it checks `mahalaworkshop.com` for a new version at
+start and every 12 hours. That request contains the program's name, version and type of Windows; the server sees
+the IP address, as with any web request. The check is described at the first start, where it can be turned off,
+and later in `%AppData%\CncController\settings.json` (`"CheckForUpdates": false`).
+
+- The page in the local network runs only when the user turns it on, and is reachable only inside that network.
+- Uninstalling: Windows Settings → Apps → "The Mahala Workshop - CNC Controller" → Uninstall. The settings in
+  `%AppData%\CncController` stay; delete that folder to remove them too.
+
 ## Licence
 
 GPL-3.0: you may use, study, change and share the program; if you share a changed version, share its source under
