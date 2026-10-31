@@ -47,6 +47,7 @@ public partial class MainForm : Form
         _api = new PageApi(_session, OnUi, AppData.UploadFolder);
         _remote = new RemoteLink(_api, OnUi);
         _remote.StateChanged += ShowRemote;
+        RemoteAccessAvailable = BuiltWithWebsite || (Settings.RemoteUrl is { Length: > 0 } && Settings.RemoteKey is { Length: > 0 });
         lblRemote.Visible = RemoteAccessAvailable;
         _lan = new LanServer(_api, OnUi, Path.Combine(AppContext.BaseDirectory, "ui"));
         _lan.StateChanged += ShowPageHost;
@@ -216,11 +217,18 @@ public partial class MainForm : Form
     }
 
 #if REMOTE_ACCESS
-    /// <summary>Remote access needs the owner's own website (src/CncController.Web); the public version is built without it.</summary>
-    static readonly bool RemoteAccessAvailable = true;
+    /// <summary>Built next to the owner's website (src/CncController.Web): remote access can be set up from scratch.</summary>
+    const bool BuiltWithWebsite = true;
 #else
-    static readonly bool RemoteAccessAvailable = false;
+    const bool BuiltWithWebsite = false;
 #endif
+
+    /// <summary>
+    /// Remote access needs the owner's own website. The public build (GitHub releases) offers it only where it is
+    /// already set up (address and key in settings.json: the owner's computer); everyone else never sees it.
+    /// Decided once at start, so clearing the key in the dialog doesn't hide the dialog.
+    /// </summary>
+    readonly bool RemoteAccessAvailable;
 
     /// <summary>Connects to the website if remote access is on and set up; otherwise makes sure it is off.</summary>
     void StartRemote()

@@ -1,0 +1,52 @@
+# Makes a release when a version tag is pushed (git tag v1.0.1; git push origin v1.0.1):
+# runs the tests, builds the installer and the update files (installer/build.ps1) and publishes them as a GitHub Release.
+# Installed programs and the download page still look at mahalaworkshop.com/cnc/releases: the owner copies the
+# release's files there by hand. Code signing (SignPath) will go between the build and the release.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version from the tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".Substring(1)
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "The tag must look like v1.2.3, not ${{ github.ref_name }}." }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Test
+        run: dotnet test CncController.slnx -c Release
+
+      - name: Installer
+        shell: pwsh
+        run: ./installer/build.ps1 -Version ${{ steps.version.outputs.value }}
+
+      # The files a release needs: build.ps1 also downloads the earlier versions (for the delta), those stay out.
+      - name: GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.version.outputs.value }}"
+          $files = Get-ChildItem artifacts/releases -File | Where-Object {
+              $_.Name -like "MahalaCNC-$version-*" -or
+              $_.Name -in @("MahalaCNC-win-Setup.exe", "MahalaCNC-win-Portable.zip", "releases.win.json", "assets.win.json", "RELEASES")
+          }
+          $files | ForEach-Object { Write-Host $_.Name }
+          gh release create "${{ github.ref_name }}" $files.FullName --title "CNC Controller $version" --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed." }

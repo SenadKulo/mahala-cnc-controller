@@ -1,5 +1,5 @@
 # Builds the program and runs the tests on every push and pull request.
-# (Releases and code signing come later: a tag will build the installer and have it signed.)
+# (A version tag makes a release: release.yml.)
 name: Build
 
 on:

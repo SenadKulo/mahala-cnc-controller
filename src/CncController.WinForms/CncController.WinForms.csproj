@@ -19,7 +19,8 @@
   </PropertyGroup>
 
   <!-- Remote access goes through the owner's own website (src/CncController.Web), which stays private: without it
-       (the public repo) the window doesn't offer "Daljinski pristup". -->
+       (the public repo, GitHub releases) the window offers "Daljinski pristup" only where settings.json already has
+       the website's address and key (MainForm.RemoteAccessAvailable). -->
   <PropertyGroup Condition="Exists('..\CncController.Web\CncController.Web.csproj')">
     <DefineConstants>$(DefineConstants);REMOTE_ACCESS</DefineConstants>
   </PropertyGroup>
