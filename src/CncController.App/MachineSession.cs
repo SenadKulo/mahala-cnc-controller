@@ -758,23 +758,6 @@ public sealed class MachineSession : IDisposable
         Changed?.Invoke();
     }
 
-    /// <summary>Grbl settings may be read and changed only while the machine stands still. Logs why not.</summary>
-    public bool CheckGrblSettingsAllowed()
-    {
-        if (!_grbl.IsReady || !CanSendCommands)
-        {
-            Log(T("Grbl još nije spreman.", "Grbl isn't ready yet."));
-            return false;
-        }
-        // Grbl writes settings to EEPROM; doing that while moving can lose steps.
-        if (LastStatus?.State is not (MachineState.Idle or MachineState.Alarm))
-        {
-            Log(T("Postavke se mogu otvoriti samo kad CNC miruje (Idle).", "The settings can be opened only while the CNC is idle."));
-            return false;
-        }
-        return true;
-    }
-
     /// <summary>
     /// Keeps the speeds and acceleration used for time estimates in step with the machine.
     /// 0.8 numbers them $5, $4, $8, $9; 0.9+ per axis ($110/$111, $120/$121, the slower of X and Y) and $11, without a default feed.

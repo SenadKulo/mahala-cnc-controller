@@ -256,6 +256,8 @@
                         </div>
                         <div class="d-flex gap-2 mt-2">
                             <button type="button" id="settingsSave" class="btn btn-sm btn-wood flex-fill" data-can="canGrblSettings" disabled data-en="Save changes to Grbl">Spremi izmjene u Grbl</button>
+                            <button type="button" id="settingsExport" class="btn btn-sm btn-quiet" title="Postavke kako ih Grbl ima, kao tekstualni fajl (svaki red se može poslati nazad kao komanda)."
+                                    data-en-title="The settings as Grbl has them, as a text file (each line can be sent back as a command)." data-en="Save to file">Spremi u fajl</button>
                             <button type="button" id="settingsClose" class="btn btn-sm btn-quiet" data-en="Close">Zatvori</button>
                         </div>
                     </div>
@@ -359,7 +361,7 @@
         </div>
     </div>
 
-    <!-- The desktop window's own things: remote access, and going back to the old view. -->
+    <!-- The desktop window's own things: remote access, the local network, the version. -->
     <div id="hostBar" class="host-bar desktop-only d-none">
         <a href="#" id="remoteSettings" title="Pristup CNC-u preko web stranice (mobitel, drugi računar). Klikni za podešavanje."
            data-en-title="Access to the CNC through the website (phone, another computer). Click to set it up.">Daljinski pristup: …</a>
@@ -367,8 +369,6 @@
            data-en-title="A phone or another computer on the same network (Wi-Fi), without the website or the internet. Click for the address, code and QR code.">Lokalna mreža: …</a>
         <a href="#" id="updateLink" class="d-none"></a>
         <span id="versionText" class="ms-auto text-muted"></span>
-        <a href="#" id="classicView" title="Vrati stari prikaz prozora (dok se novi isprobava na CNC-u)."
-           data-en-title="Back to the window's old view (while the new one is being tried on the CNC)." data-en="Old view">Stari prikaz</a>
     </div>
 </div>
 

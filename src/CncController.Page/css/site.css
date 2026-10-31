@@ -857,7 +857,7 @@ body {
     background: var(--surface-2);
 }
 
-/* The desktop window's own bar at the bottom (remote access, old view), instead of its old status strip. */
+/* The desktop window's own bar at the bottom (remote access, local network, version). */
 .host-bar {
     display: flex;
     gap: 1rem;

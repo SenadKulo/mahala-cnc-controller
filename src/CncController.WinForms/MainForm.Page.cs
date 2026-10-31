@@ -6,9 +6,9 @@ using Microsoft.Web.WebView2.WinForms;
 namespace CncController.WinForms;
 
 /// <summary>
-/// The window's new view: the website's machine page (ui/machine.html) in WebView2, talking to the session directly
-/// through <see cref="LocalPage"/>, without the internet. The old controls stay underneath as a fallback
-/// (<see cref="AppSettings.ClassicView"/>), and are used by themselves when WebView2 is missing.
+/// The window's content: the website's machine page (ui/machine.html) in WebView2, talking to the session directly
+/// through <see cref="LocalPage"/>, without the internet. Without WebView2 the program can't be used: it says what
+/// to install and closes.
 /// </summary>
 public partial class MainForm
 {
@@ -19,48 +19,44 @@ public partial class MainForm
     WebView2? _webView;
     LocalPage? _page;
 
-    /// <summary>The page is shown instead of the old controls.</summary>
-    bool PageShown => _webView is { Visible: true };
-
-    /// <summary>Shows the page, creating it the first time; stays on the old view if WebView2 is missing.</summary>
     async Task ShowPageAsync()
     {
-        if (_webView is null)
+        try
         {
-            try
-            {
-                CoreWebView2Environment.GetAvailableBrowserVersionString();
-            }
-            catch (WebView2RuntimeNotFoundException)
-            {
-                _session.Log($"Novi prikaz nije moguć: na računaru nema WebView2 (Microsoft Edge WebView2 Runtime, {WebView2Download}). Ostaje stari prikaz.");
-                ShowClassic(remember: false);
-                return;
-            }
-            try
-            {
-                await CreatePageAsync();
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                _session.Log("Novi prikaz se nije mogao pokrenuti, ostaje stari: " + ex.Message);
-                _webView?.Dispose();
-                _webView = null;
-                ShowClassic(remember: false);
-                return;
-            }
+            CoreWebView2Environment.GetAvailableBrowserVersionString();
         }
-        _webView!.Visible = true;
-        splitMain.Visible = statusStrip.Visible = false;
-        _webView.Focus();
-        Remember(classic: false);
+        catch (WebView2RuntimeNotFoundException)
+        {
+            CloseWithoutPage(T("Programu treba Microsoft Edge WebView2 Runtime, a na ovom računaru ga nema (na Windowsu 10 i 11 je obično već tu).",
+                "The program needs the Microsoft Edge WebView2 Runtime, which this computer doesn't have (Windows 10 and 11 usually have it)."));
+            return;
+        }
+        try
+        {
+            await CreatePageAsync();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            CloseWithoutPage(T("Stranica programa se nije mogla pokrenuti (WebView2): ", "The program's page couldn't start (WebView2): ") + ex.Message);
+        }
+    }
+
+    /// <summary>Says why there is nothing to show, offers the WebView2 download, and closes.</summary>
+    void CloseWithoutPage(string reason)
+    {
+        _session.Log(reason);
+        var answer = MessageBox.Show(this, reason + Environment.NewLine + Environment.NewLine
+            + T("Otvoriti Microsoftovu stranicu za preuzimanje WebView2?", "Open Microsoft's WebView2 download page?"),
+            Text, MessageBoxButtons.YesNo, MessageBoxIcon.Error);
+        if (answer == DialogResult.Yes)
+            OpenInBrowser(new Uri(WebView2Download));
+        Close();
     }
 
     async Task CreatePageAsync()
     {
-        var webView = new WebView2 { Dock = DockStyle.Fill, Visible = false };
+        var webView = new WebView2 { Dock = DockStyle.Fill };
         Controls.Add(webView);
-        webView.BringToFront();
         _webView = webView;
 
         // Its own data (the page's remembered step, keyboard choice) next to the program's other data.
@@ -79,7 +75,8 @@ public partial class MainForm
         // Links to other sites open in the browser; the window shows only the machine page.
         core.NavigationStarting += (_, e) =>
         {
-            if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) && uri.Host != PageHost)
+            // blob: is a file the page makes itself (Grbl settings saved to a file).
+            if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) && uri.Scheme != "blob" && uri.Host != PageHost)
             {
                 e.Cancel = true;
                 OpenInBrowser(uri);
@@ -91,18 +88,48 @@ public partial class MainForm
             if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri))
                 OpenInBrowser(uri);
         };
+        // A file from the page: asked where to save it, as elsewhere in the window, instead of WebView2's Downloads.
+        core.DownloadStarting += (_, e) =>
+        {
+            var deferral = e.GetDeferral();
+            var suggested = e.ResultFilePath;
+            // The dialog runs its own message loop: after WebView2's event, not inside it (see WebMessageReceived).
+            OnUi(() =>
+            {
+                using (deferral)
+                {
+                    using var dialog = new SaveFileDialog
+                    {
+                        Title = T("Spremi fajl", "Save the file"),
+                        Filter = T("Tekst", "Text") + " (*.txt)|*.txt|" + T("Svi fajlovi", "All files") + " (*.*)|*.*",
+                        FileName = Path.GetFileName(suggested),
+                    };
+                    if (Directory.Exists(Settings.LastFolder))
+                        dialog.InitialDirectory = Settings.LastFolder;
+                    if (dialog.ShowDialog(this) == DialogResult.OK)
+                    {
+                        e.ResultFilePath = dialog.FileName;
+                        e.Handled = true;
+                        _session.Log(T("Spremljeno: ", "Saved: ") + dialog.FileName);
+                    }
+                    else
+                    {
+                        e.Cancel = true;
+                    }
+                }
+            });
+        };
 
         _page = new LocalPage(_api, OnUi, json =>
         {
             if (!webView.IsDisposed)
                 core.PostWebMessageAsJson(json);
-        });
-        // The window's own dialogs, as in the old view.
-        _page.AddHostMethod("OpenFile", _ => { btnOpenFile_Click(btnOpenFile, EventArgs.Empty); return null; });
-        _page.AddHostMethod("RemoteSettings", _ => { lblRemote_Click(lblRemote, EventArgs.Empty); return null; });
+        }, recentLog: [.. _recentLog]);
+        // The window's own dialogs.
+        _page.AddHostMethod("OpenFile", _ => { OpenFile(); return null; });
+        _page.AddHostMethod("RemoteSettings", _ => { ShowRemoteSettings(); return null; });
         _page.AddHostMethod("LanSettings", _ => { ShowLanSettings(); return null; });
         _page.AddHostMethod("Update", _ => StartUpdate());
-        _page.AddHostMethod("ClassicView", _ => { ShowClassic(remember: true); return null; });
         // Handled after WebView2's event, not inside it: a dialog opened from the page (file, remote access, local
         // network) runs its own message loop, and WebView2 kills the whole program when its event handler does that.
         core.WebMessageReceived += (_, e) =>
@@ -112,30 +139,8 @@ public partial class MainForm
         };
         ShowPageHost();
         core.Navigate($"https://{PageHost}/desktop.html");
+        webView.Focus();
     }
-
-    /// <summary>Back to the old controls (from the page's "Stari prikaz", or when the page can't run).</summary>
-    void ShowClassic(bool remember)
-    {
-        if (_webView is not null)
-            _webView.Visible = false;
-        splitMain.Visible = statusStrip.Visible = true;
-        if (remember)
-            Remember(classic: true);
-        // A question the page was showing is now asked in the old window's way.
-        if (_session.PendingQuestion is not null && _questionDialog is null)
-            OnUi(AskPendingQuestion);
-    }
-
-    void Remember(bool classic)
-    {
-        if (Settings.ClassicView == classic)
-            return;
-        Settings.ClassicView = classic;
-        _session.SaveSettings();
-    }
-
-    void lblNewView_Click(object? sender, EventArgs e) => _ = ShowPageAsync();
 
     /// <summary>
     /// What only the window knows, for its bar at the bottom of the page: remote access (only with the website,

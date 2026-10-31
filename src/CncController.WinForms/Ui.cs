@@ -1,5 +1,3 @@
-using CncController.Remote;
-
 namespace CncController.WinForms;
 
 /// <summary>Colors and the flat button look shared by all windows.</summary>
@@ -10,17 +8,6 @@ static class Ui
     public static readonly Color Orange = Color.FromArgb(230, 108, 0);
     public static readonly Color Red = Color.FromArgb(198, 40, 40);
     public static readonly Color Grey = Color.FromArgb(117, 117, 117);
-    public static readonly Color MutedText = Color.FromArgb(110, 110, 110);
-
-    public static Color Of(Tone tone) => tone switch
-    {
-        Tone.Green => Green,
-        Tone.Blue => Blue,
-        Tone.Orange => Orange,
-        Tone.Red => Red,
-        Tone.Grey => Grey,
-        _ => MutedText,
-    };
 
     static readonly Color Border = Color.FromArgb(173, 173, 173);
     static readonly Color Hover = Color.FromArgb(229, 241, 251);

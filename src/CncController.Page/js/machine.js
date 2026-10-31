@@ -653,6 +653,24 @@
             askSettings("WriteGrblSettings", changes);
     });
 
+    // Values as Grbl has them, not unsaved edits; each line can be sent back as a command.
+    $("settingsExport").addEventListener("click", () => {
+        if (!settings.length)
+            return;
+        const now = new Date();
+        const pad = n => String(n).padStart(2, "0");
+        const lines = [`; Grbl ${t("postavke", "settings")}, ${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`,
+            ...settings.map(s => {
+                const meaning = s.meaning || s.grblText;
+                return meaning ? `$${s.number}=${s.value} (${meaning})` : `$${s.number}=${s.value}`;
+            })];
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(new Blob([lines.join("\r\n") + "\r\n"], { type: "text/plain" }));
+        link.download = `grbl-${t("postavke", "settings")}-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.txt`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    });
+
     /// Reads or writes on the desktop and shows the settings Grbl answered with.
     async function askSettings(method, ...args) {
         const reading = method === "ReadGrblSettings";
@@ -853,7 +871,6 @@
         $("remoteSettings").addEventListener("click", hostAction("RemoteSettings"));
         $("lanSettings").addEventListener("click", hostAction("LanSettings"));
         $("updateLink").addEventListener("click", hostAction("Update"));
-        $("classicView").addEventListener("click", hostAction("ClassicView"));
 
         const keyboardKey = "cnc.keyboardJog";
         try { $("keyboardJog").checked = localStorage.getItem(keyboardKey) === "1"; } catch { }

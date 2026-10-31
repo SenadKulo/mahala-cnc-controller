@@ -20,8 +20,8 @@ public static class AppData
     public static readonly string UploadFolder = Path.Combine(Folder, "web");
 }
 
-/// <summary>Normal (not maximized) window bounds in screen pixels, plus the width of the left column.</summary>
-public sealed record WindowPlacement(int X, int Y, int Width, int Height, bool Maximized, int SplitterDistance);
+/// <summary>Normal (not maximized) window bounds in screen pixels.</summary>
+public sealed record WindowPlacement(int X, int Y, int Width, int Height, bool Maximized);
 
 /// <summary>Language of everything the program shows: the page, the log, questions and notifications.</summary>
 public enum Language
@@ -111,9 +111,6 @@ public sealed class AppSettings
                 CompressorPeriodMinutes = value.Period.TotalMinutes;
         }
     }
-
-    /// <summary>The window shows its old controls instead of the machine page (WebView2); chosen in the window.</summary>
-    public bool ClassicView { get; set; }
 
     /// <summary>Connect to the website for remote access. Off until the user turns it on.</summary>
     public bool RemoteEnabled { get; set; }

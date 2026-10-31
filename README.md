@@ -10,7 +10,7 @@ The program speaks English and Bosnian (one click switches the language).
 
 ## What it does
 
-- **Grbl 0.8, 0.9 and 1.1**: recognises the version, explains errors and alarms, reads and changes the settings (`$$`).
+- **Grbl 0.8, 0.9 and 1.1**: recognises the version, explains errors and alarms, reads, changes and saves the settings to a file (`$$`).
 - **Jobs**: loads G-code, shows the drawing with the finished part and the laser live, a frame to check the job fits
   on the material, and an estimate of the time left. Original ArtCAM files are converted for the laser.
 - **From your phone, in your home network**: the same page on the phone, opened by scanning a QR code; a 6-digit
