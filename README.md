@@ -66,7 +66,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 - Committers and reviewers: [Senad Kulo](https://github.com/SenadKulo)
 - Approvers: [Senad Kulo](https://github.com/SenadKulo)
 
-Releases up to and including 1.0.1 are not signed.
+Releases up to and including 1.0.3 are not signed.
 
 ## Privacy policy
 
