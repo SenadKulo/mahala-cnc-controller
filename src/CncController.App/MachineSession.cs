@@ -277,7 +277,7 @@ public sealed class MachineSession : IDisposable
             Settings.CompressorPause = value;
             SaveSettings();
             UpdateCompressors();
-            if (!value && _job?.State == JobState.Break)
+            if (!value && _job?.State == JobState.Break && !_laserOffPause)
             {
                 Log(T("Planirana pauza isključena, nastavljam posao.", "Scheduled break switched off, continuing the job."));
                 _job.EndBreak();
@@ -647,10 +647,37 @@ public sealed class MachineSession : IDisposable
 
     public void Resume()
     {
-        if (JobActive)
+        if (LaserOffPause)
+        {
+            Log(T("Nastavljam posao nakon pauze.", "Continuing the job after the pause."));
+            _job!.EndBreak();
+        }
+        else if (JobActive)
             _job!.Resume();
         else if (IsOpen)
             _grbl.CycleStart();
+    }
+
+    /// <summary>The job runs, so it can stop at a line boundary with the laser off (<see cref="PauseLaserOff"/>).</summary>
+    public bool CanPauseLaserOff => _job?.State == JobState.Running;
+
+    /// <summary>The job stands in a pause with the laser off that the user asked for; <see cref="Resume"/> ends it.</summary>
+    public bool LaserOffPause => _laserOffPause && _job?.State == JobState.Break;
+    bool _laserOffPause;
+    bool _laserOffSettledLogged;
+
+    /// <summary>
+    /// Pause with the laser off. Feed hold ('!') stops at once but Grbl 0.8c keeps the laser on, so it burns one spot;
+    /// this stops sending instead, and the CNC stops with the laser off after the lines already in Grbl's buffer.
+    /// </summary>
+    public void PauseLaserOff()
+    {
+        if (!CanPauseLaserOff)
+            return;
+        _laserOffPause = true;
+        _laserOffSettledLogged = false;
+        if (!_job!.StartBreak())
+            _laserOffPause = false;
     }
 
     public void ToggleLaser()
@@ -1141,6 +1168,15 @@ public sealed class MachineSession : IDisposable
     {
         var last = job.LastCompletedLine;
         var where = last is null ? "" : T(" Zadnja prihvaćena linija: ", " Last accepted line: ") + $"{last.SourceLineNumber} ({last.Text}).";
+        if (state != JobState.Break && _laserOffPause)
+        {
+            _laserOffPause = false;
+            if (state == JobState.Running)
+            {
+                Changed?.Invoke();
+                return;
+            }
+        }
         switch (state)
         {
             case JobState.Running:
@@ -1153,6 +1189,11 @@ public sealed class MachineSession : IDisposable
                 Log(job.CompletedCount != job.StartIndex ? T("Posao nastavljen.", "Job resumed.")
                     : job.StartIndex == 0 ? T("Posao pokrenut.", "Job started.")
                     : T("Posao nastavljen od linije ", "Job resumed from line ") + $"{job.Program.Lines[job.StartIndex].SourceLineNumber}.");
+                break;
+            case JobState.Break when _laserOffPause:
+                Log(T("Pauza sa ugašenim laserom: CNC staje nakon linija koje su već u Grbl-u.",
+                    "Pause with the laser off: the CNC stops after the lines already in Grbl.") + where);
+                SavePositionMemory();
                 break;
             case JobState.Break:
                 OnCompressorBreak();
@@ -1412,6 +1453,13 @@ public sealed class MachineSession : IDisposable
         var now = _clock();
         AutoResumeTick(now);
         CompressorTick(now);
+        if (LaserOffPause && !_laserOffSettledLogged && _job!.IsBreakSettled)
+        {
+            _laserOffSettledLogged = true;
+            Log(T("  CNC stoji, laser ugašen. \"Nastavi\" pali laser i nastavlja posao.",
+                "  The CNC stands still, laser off. \"Resume\" switches the laser on and continues the job."));
+            Changed?.Invoke();
+        }
     }
 
     public void SaveSettings()

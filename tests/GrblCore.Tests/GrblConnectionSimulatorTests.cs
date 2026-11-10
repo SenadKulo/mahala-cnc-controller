@@ -150,6 +150,45 @@ public class GrblConnectionSimulatorTests : IDisposable
     }
 
     [Fact]
+    public async Task StartBreak_StopsWithLaserOff_TakesBackUnsentLines_ThenSendsEachLineOnce()
+    {
+        await ConnectAsync();
+        var program = Square(30);
+        using var job = new GCodeJob(_grbl, program);
+        var written = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        _grbl.LineSent += written.Enqueue;
+        var states = new System.Collections.Concurrent.BlockingCollection<JobState>();
+        job.StateChanged += states.Add;
+
+        job.Start();
+        Assert.Equal(JobState.Running, states.Take());
+        await WaitUntil(() => job.CompletedCount >= 10);
+        int sentBefore = job.SentCount;
+        Assert.True(job.StartBreak());
+        Assert.True(states.TryTake(out var state, Timeout));
+        Assert.Equal(JobState.Break, state);
+        // Lines still waiting in the connection were taken back, not sent.
+        Assert.True(job.SentCount <= sentBefore);
+        Assert.False(job.StartBreak());
+
+        await WaitUntil(() => job.IsBreakSettled);
+        int stoppedAt = job.CompletedCount;
+        Assert.Equal(stoppedAt, job.SentCount);
+        Assert.False(_sim.LaserOn);
+        Assert.Equal("Idle", _sim.State);
+
+        job.EndBreak();
+        Assert.True(states.TryTake(out state, Timeout));
+        Assert.Equal(JobState.Running, state);
+        Assert.True(states.TryTake(out state, Timeout));
+        Assert.Equal(JobState.Completed, state);
+
+        // Every program line went to Grbl exactly once and in order; the break added M5, and M3 before continuing.
+        string[] expected = [.. program.Lines.Take(stoppedAt).Select(l => l.Text), "M5", "M3", .. program.Lines.Skip(stoppedAt).Select(l => l.Text)];
+        Assert.Equal(expected, written.ToArray());
+    }
+
+    [Fact]
     public async Task StatusInterval_ChangesWhileConnected()
     {
         await ConnectAsync();

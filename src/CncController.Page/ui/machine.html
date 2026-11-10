@@ -163,6 +163,11 @@
                                 data-confirm="Zaustaviti posao? Pokreti koji su već u Grbl baferu će se još izvršiti."
                                 data-en-confirm="Stop the job? Moves already in Grbl's buffer will still run."><svg class="icon"><use href="#i-stop" /></svg>Stop</button>
                     </div>
+                    <div class="d-grid mt-2">
+                        <button type="button" class="btn btn-pause-laser btn-icon" data-command="PauseLaserOff" data-can="canPauseLaserOff" disabled
+                                title="Prestane slati linije i ugasi laser: CNC stane nakon linija koje su već u Grbl-u, laser ne prži jedno mjesto. Nastavi pali laser i nastavlja."
+                                data-en-title="Stops sending lines and switches the laser off: the CNC stops after the lines already in Grbl, so the laser doesn't burn one spot. Resume switches it on and continues."><svg class="icon"><use href="#i-pause" /></svg><span data-en="Pause, laser off">Pauza, laser ugašen</span></button>
+                    </div>
                     <div class="button-grid mt-2">
                         <button type="button" class="btn btn-quiet btn-icon" data-command="Frame" data-can="canFrame" disabled
                                 title="Obiđi rubove crteža ugašenim laserom, da provjeriš da li stane na materijal."

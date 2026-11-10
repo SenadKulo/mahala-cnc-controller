@@ -154,6 +154,20 @@ public sealed class GrblConnection : IDisposable
             _pending.Clear();
     }
 
+    /// <summary>
+    /// Drops lines not yet sent to Grbl and returns how many, so the caller can send them again later.
+    /// They are the last ones queued; lines already in Grbl's buffer still run and are answered as usual.
+    /// </summary>
+    public int TakePending()
+    {
+        lock (_sync)
+        {
+            int count = _pending.Count;
+            _pending.Clear();
+            return count;
+        }
+    }
+
     /// <summary>Pause ('!'). Motion stops with deceleration; the spindle keeps running.</summary>
     public void FeedHold() => WriteRealtime((byte)'!');
 

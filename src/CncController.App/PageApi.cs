@@ -97,6 +97,7 @@ public sealed class PageApi
         switch (command.Name)
         {
             case RemoteCommands.Pause: return Do(origin, T("Pauza", "Pause"), s.IsOpen, s.Pause);
+            case RemoteCommands.PauseLaserOff: return Do(origin, T("Pauza sa ugašenim laserom", "Pause with the laser off"), s.CanPauseLaserOff, s.PauseLaserOff);
             case RemoteCommands.Resume: return Do(origin, T("Nastavi", "Resume"), s.IsOpen, s.Resume);
             case RemoteCommands.Stop: return Do(origin, "Stop", s.JobActive, s.Stop);
             case RemoteCommands.Reset: return Do(origin, "Reset", s.IsOpen, s.Reset);
@@ -465,7 +466,7 @@ public sealed class PageApi
             Completed = job?.CompletedCount ?? 0,
             Total = job?.TotalCount ?? session.Program?.Lines.Count ?? 0,
             JobActive = session.JobActive,
-            JobState = job is null ? null : Texts.JobState(job.State, session.Language),
+            JobState = job is null ? null : Texts.JobState(session),
             ProgressText = Texts.Progress(session),
             RemainingText = remaining is { } left ? Texts.Duration(left) : null,
             FinishText = remaining is { } untilEnd ? (now + untilEnd).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) : null,
@@ -476,6 +477,7 @@ public sealed class PageApi
                 e.Time, e.Kind == JobEventKind.CompressorBreak ? "break" : "restart", e.Line, e.Until))],
             CurrentLine = Texts.CurrentLine(session),
             CanPause = session.IsOpen,
+            CanPauseLaserOff = session.CanPauseLaserOff,
             CanResume = session.IsOpen,
             CanStop = session.JobActive,
             CanReset = session.IsOpen,

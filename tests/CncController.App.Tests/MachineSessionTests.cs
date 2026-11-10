@@ -231,6 +231,36 @@ public sealed class MachineSessionTests : IDisposable
     }
 
     [Fact]
+    public void PauseLaserOff_StopsWithLaserOff_ResumeContinues()
+    {
+        ConnectSimulator();
+        WaitUntil(() => _session.PositionConfirmed);
+        LoadSquares(100);
+        _ui.Invoke(() => _session.StartJob());
+        WaitUntil(() => _session.Job!.CompletedCount > 20);
+
+        Assert.True(_ui.Invoke(() => _session.CanPauseLaserOff));
+        _ui.Invoke(_session.PauseLaserOff);
+        WaitUntil(() => Logged("CNC stoji, laser ugašen. \"Nastavi\""), tick: true);
+        Assert.True(Logged("Pauza sa ugašenim laserom: CNC staje"));
+        Assert.False(Simulator.LaserOn);
+        Assert.Equal("Idle", Simulator.State);
+        Assert.Equal("Pauza, laser ugašen", _ui.Invoke(() => Texts.JobState(_session)));
+        Assert.False(_ui.Invoke(() => _session.CanPauseLaserOff));
+        // Switching the compressor pause off doesn't end a pause the user asked for.
+        _ui.Invoke(() => { _session.CompressorPause = true; _session.CompressorPause = false; });
+        Assert.True(_ui.Invoke(() => _session.LaserOffPause));
+
+        _ui.Invoke(_session.Resume);
+        WaitUntil(() => _session.Job!.State == JobState.Completed, tick: true);
+
+        Assert.True(Logged("Nastavljam posao nakon pauze."));
+        Assert.False(_ui.Invoke(() => _session.LaserOffPause));
+        Assert.True(PositionRecovery.Same(new Position(1, 2, 0), Simulator.WorkPosition), Simulator.WorkPosition.ToString());
+        Assert.Empty(_ui.Invoke(() => _session.JobEvents.ToList()));
+    }
+
+    [Fact]
     public void CompressorPause_StopsWithLaserOff_ThenContinues()
     {
         ConnectSimulator();

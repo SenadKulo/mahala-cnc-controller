@@ -45,6 +45,8 @@ public static class RemoteCommands
 {
     public const string Pause = "Pause";
     public const string Resume = "Resume";
+    /// <summary>Pause with the laser off: the job stops sending, M5 follows the lines already in Grbl, "Resume" continues.</summary>
+    public const string PauseLaserOff = "PauseLaserOff";
     public const string Stop = "Stop";
     public const string Reset = "Reset";
     public const string Start = "Start";
@@ -87,7 +89,7 @@ public static class RemoteCommands
 
     public static readonly IReadOnlyList<string> All =
     [
-        Pause, Resume, Stop, Reset, Start, Frame, ResumeFrom, Jog, Laser, Unlock,
+        Pause, PauseLaserOff, Resume, Stop, Reset, Start, Frame, ResumeFrom, Jog, Laser, Unlock,
         SetZero, RestorePosition, GoToZero, AutoResume, CompressorPause, Answer, Send,
         Connect, Disconnect, Compressors, Convert, CloseFile, Baud, LaserPower, Language,
     ];
@@ -198,6 +200,8 @@ public sealed record MachineSnapshot
 
     // What may be done now, the same as on the desktop.
     public bool CanPause { get; init; }
+    /// <summary>A job runs: it can stop with the laser off (<see cref="RemoteCommands.PauseLaserOff"/>).</summary>
+    public bool CanPauseLaserOff { get; init; }
     public bool CanResume { get; init; }
     public bool CanStop { get; init; }
     public bool CanReset { get; init; }

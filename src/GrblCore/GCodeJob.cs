@@ -49,8 +49,9 @@ public sealed class GCodeJob : IDisposable
     int _preambleSent;
     int _nextToSend;
     int _completed;
-    // Everything sent and not yet answered, in order. Grbl answers in the order lines were sent.
-    readonly Queue<(SentKind Kind, string Text)> _sent = new();
+    // Everything sent and not yet answered, in order, with the laser state before each line (to take a line back).
+    // Grbl answers in the order lines were sent.
+    Queue<(SentKind Kind, string Text, string? LaserBefore)> _sent = new();
     // Lines of our own (break M5, laser back on) waiting to be sent before the next program line.
     readonly Queue<string> _extra = new();
     // "M3"/"M4" if the laser is on after the lines sent so far, as the program left it.
@@ -157,6 +158,58 @@ public sealed class GCodeJob : IDisposable
         Feed();
     }
 
+    /// <summary>
+    /// Starts a <see cref="JobState.Break"/> now, as the user asked (pause with the laser off): lines not yet sent
+    /// to Grbl are taken back (they go out again after the break), and M5 follows the lines already in Grbl's buffer,
+    /// so the CNC stops with the laser off as soon as those have run. False if the job isn't running.
+    /// </summary>
+    public bool StartBreak()
+    {
+        lock (_sync)
+        {
+            if (State != JobState.Running)
+                return false;
+            State = JobState.Break;
+            _breakSettled = false;
+            // A laser-on of an earlier break that hasn't gone out yet; EndBreak queues it again.
+            _extra.Clear();
+            TakeBackUnsent();
+            try
+            {
+                Send(SentKind.Extra, LaserOff);
+            }
+            catch (InvalidOperationException)
+            {
+                // Connection dropped; OnDisconnected aborts the job.
+            }
+        }
+        StateChanged?.Invoke(JobState.Break);
+        return true;
+    }
+
+    /// <summary>
+    /// Takes the lines still waiting in the connection out of <see cref="_sent"/> and rewinds, to send them again.
+    /// Nothing else sends while a job runs, so the connection's waiting lines are the last ones this job sent.
+    /// </summary>
+    void TakeBackUnsent()
+    {
+        int dropped = _grbl.TakePending();
+        if (dropped == 0)
+            return;
+        var sent = _sent.ToArray();
+        int keep = Math.Max(0, sent.Length - dropped);
+        for (int i = keep; i < sent.Length; i++)
+        {
+            if (sent[i].Kind == SentKind.Program)
+                _nextToSend--;
+            else if (sent[i].Kind == SentKind.Preamble)
+                _preambleSent--;
+        }
+        if (keep < sent.Length)
+            _laser = sent[keep].LaserBefore;
+        _sent = new Queue<(SentKind, string, string?)>(sent[..keep]);
+    }
+
     /// <summary>Ends a <see cref="JobState.Break"/>: the laser goes back on if the program had it on, and sending continues.</summary>
     public void EndBreak()
     {
@@ -229,7 +282,7 @@ public sealed class GCodeJob : IDisposable
     void Send(SentKind kind, string text)
     {
         _grbl.SendLine(text);
-        _sent.Enqueue((kind, text));
+        _sent.Enqueue((kind, text, _laser));
         if (kind != SentKind.Extra)
             _laser = LaserAfter(text, _laser);
     }

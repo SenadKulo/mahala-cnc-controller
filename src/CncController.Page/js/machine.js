@@ -930,7 +930,7 @@
     /// What kind of line it is, for its colour: compressor breaks, restarts and errors, resuming, the end.
     /// The log is in either language (a line keeps the language it was written in).
     function logKind(text) {
-        if (/planirana pauza|scheduled break|raspored pauze|break schedule|kompresor|compressor/i.test(text))
+        if (/planirana pauza|scheduled break|ugašenim laserom|with the laser off|raspored pauze|break schedule|kompresor|compressor/i.test(text))
             return "break";
         if (/restartovao|restarted|restart\b/i.test(text))
             return "restart";

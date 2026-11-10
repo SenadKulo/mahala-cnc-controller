@@ -144,6 +144,20 @@ body {
     --bs-btn-disabled-border-color: var(--surface-2);
 }
 
+/* Pause with the laser off: the pause's orange, as an outline, beside the full pause. */
+.btn-pause-laser {
+    --bs-btn-color: var(--tone-orange);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--tone-orange);
+    --bs-btn-hover-color: #1a1205;
+    --bs-btn-hover-bg: var(--tone-orange);
+    --bs-btn-hover-border-color: var(--tone-orange);
+    --bs-btn-disabled-color: var(--faint);
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: var(--border);
+    min-height: 2.75rem;
+}
+
 .btn-resume {
     --bs-btn-color: #6fe09a;
     --bs-btn-bg: rgba(60, 207, 110, .08);

@@ -158,6 +158,11 @@ public static class Texts
         return text.ToString();
     }
 
+    /// <summary>The job's state; a break the user asked for is a pause with the laser off, not the compressors' one.</summary>
+    public static string JobState(MachineSession session) =>
+        session.LaserOffPause ? session.Language.T("Pauza, laser ugašen", "Paused, laser off")
+        : session.Job is { } job ? JobState(job.State, session.Language) : "";
+
     public static string JobState(JobState state, Language l) => state switch
     {
         GrblCore.JobState.Ready => l.T("Spreman", "Ready"),
