@@ -1,7 +1,7 @@
 # Makes a release when a version tag is pushed (git tag v1.0.1; git push origin v1.0.1):
 # runs the tests, builds the installer and the update files (installer/build.ps1) and publishes them as a GitHub Release.
 # Installed programs and the download page still look at mahalaworkshop.com/cnc/releases: the owner copies the
-# release's files there by hand. Code signing (SignPath) will go between the build and the release.
+# release's files there by hand. Releases are not code-signed for now.
 name: Release
 
 on:

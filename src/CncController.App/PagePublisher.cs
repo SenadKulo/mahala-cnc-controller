@@ -16,6 +16,9 @@ public sealed class PagePublisher : IDisposable
     readonly PageApi _api;
     bool _snapshotDirty;
     bool _toolpathDirty;
+    bool _historyDirty;
+    // The history's texts are in the program's language; switching it sends them again.
+    Language _historyLanguage;
     readonly List<LogLine> _newLog = [];
     readonly Queue<LogLine> _recentLog = new();
 
@@ -31,12 +34,14 @@ public sealed class PagePublisher : IDisposable
         _session.ProgressChanged += MarkDirty;
         _session.ProgramChanged += OnProgramChanged;
         _session.Logged += OnLogged;
+        _session.HistoryChanged += OnHistoryChanged;
         _api.Changed += MarkDirty;
     }
 
     void MarkDirty() => _snapshotDirty = true;
     void OnStatus(GrblCore.GrblStatus _) => _snapshotDirty = true;
     void OnProgramChanged() => _toolpathDirty = _snapshotDirty = true;
+    void OnHistoryChanged() => _historyDirty = true;
 
     void OnLogged(DateTime time, string text)
     {
@@ -51,9 +56,11 @@ public sealed class PagePublisher : IDisposable
     public void SendAll(Action<string, object?[]> send)
     {
         _newLog.Clear();
-        _toolpathDirty = _snapshotDirty = false;
+        _toolpathDirty = _snapshotDirty = _historyDirty = false;
+        _historyLanguage = _session.Language;
         send(RemoteContract.SendToolpath, [_api.BuildToolpath()]);
         send(RemoteContract.SendLog, [_recentLog.ToArray(), true]);
+        send(RemoteContract.SendHistory, [_api.BuildHistory()]);
         send(RemoteContract.SendSnapshot, [_api.BuildSnapshot()]);
     }
 
@@ -66,6 +73,12 @@ public sealed class PagePublisher : IDisposable
         {
             _toolpathDirty = false;
             send(RemoteContract.SendToolpath, [_api.BuildToolpath()]);
+        }
+        if (_historyDirty || _historyLanguage != _session.Language)
+        {
+            _historyDirty = false;
+            _historyLanguage = _session.Language;
+            send(RemoteContract.SendHistory, [_api.BuildHistory()]);
         }
         if (_newLog.Count > 0)
         {
@@ -89,6 +102,7 @@ public sealed class PagePublisher : IDisposable
         _session.ProgressChanged -= MarkDirty;
         _session.ProgramChanged -= OnProgramChanged;
         _session.Logged -= OnLogged;
+        _session.HistoryChanged -= OnHistoryChanged;
         _api.Changed -= MarkDirty;
     }
 }

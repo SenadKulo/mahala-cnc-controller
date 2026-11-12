@@ -18,6 +18,8 @@ public static class RemoteContract
     public const string SendSnapshot = "Snapshot";
     public const string SendLog = "Log";
     public const string SendToolpath = "Toolpath";
+    /// <summary>The last jobs, newest first (<see cref="JobHistoryInfo"/>[]); sent when one ends and to a page that connects.</summary>
+    public const string SendHistory = "History";
     /// <summary>A <see cref="MachineNotification"/> for the phones that turned notifications on.</summary>
     public const string SendNotification = "Notify";
 
@@ -78,6 +80,11 @@ public static class RemoteCommands
     public const string Compressors = "Compressors";
     /// <summary>Converts the uploaded ArtCAM file <see cref="RemoteCommand.Text"/> for the laser with <see cref="RemoteCommand.Feeds"/> and loads it.</summary>
     public const string Convert = "Convert";
+    /// <summary>
+    /// Engraves <see cref="RemoteCommand.Text"/> with the single-stroke font: capitals <see cref="RemoteCommand.Number"/> mm
+    /// high, at feed <see cref="RemoteCommand.Feeds"/>[0], <see cref="RemoteCommand.Passes"/> times; made into a file and loaded.
+    /// </summary>
+    public const string EngraveText = "EngraveText";
     /// <summary>Closes the loaded program (not during a job).</summary>
     public const string CloseFile = "CloseFile";
     /// <summary>Port speed for the next connect (<see cref="RemoteCommand.Number"/>, one of <see cref="MachineSnapshot.BaudRates"/>).</summary>
@@ -91,7 +98,7 @@ public static class RemoteCommands
     [
         Pause, PauseLaserOff, Resume, Stop, Reset, Start, Frame, ResumeFrom, Jog, Laser, Unlock,
         SetZero, RestorePosition, GoToZero, AutoResume, CompressorPause, Answer, Send,
-        Connect, Disconnect, Compressors, Convert, CloseFile, Baud, LaserPower, Language,
+        Connect, Disconnect, Compressors, Convert, EngraveText, CloseFile, Baud, LaserPower, Language,
     ];
 }
 
@@ -107,6 +114,7 @@ public sealed record RemoteCommand
     public string? Text { get; init; }
     public double? Number { get; init; }
     public int[]? Feeds { get; init; }
+    public int? Passes { get; init; }
 }
 
 /// <summary>The desktop's answer to a command: done, or why not (in the program's language, ready to show).</summary>
@@ -181,6 +189,11 @@ public sealed record MachineSnapshot
     public string? FileName { get; init; }
     public string? FileInfo { get; init; }
 
+    /// <summary>Text engraving as last used: capital height (mm), feed (mm/min), passes.</summary>
+    public double TextHeight { get; init; }
+    public int TextFeed { get; init; }
+    public int TextPasses { get; init; }
+
     /// <summary>Lines Grbl accepted so far; the toolpath is drawn as done up to this line index.</summary>
     public int Completed { get; init; }
     public int Total { get; init; }
@@ -250,6 +263,13 @@ public sealed record MachineSnapshot
 }
 
 public sealed record LogLine(DateTime Time, string Text);
+
+/// <summary>
+/// A finished job for the history list, with its texts in the program's language: how it ended (and its tone),
+/// how long it ran against the estimate, the lines done, and pauses, breaks and restarts if any.
+/// </summary>
+public sealed record JobHistoryInfo(DateTime Started, string File, string Outcome, Tone Tone, string Duration, string? Estimate,
+    string? Deviation, string Lines, string? Details);
 
 /// <summary>A compressor break ("break", until when) or a restart ("restart") during the job, and the lines done by then.</summary>
 public sealed record JobEventInfo(DateTime Time, string Kind, int Line, DateTime? Until);

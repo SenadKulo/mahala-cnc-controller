@@ -13,6 +13,8 @@ public sealed class PageApi
 {
     const int MaxUploadNameLength = 100;
     const int MaxFeed = 10_000;
+    const int MaxEngraveText = 500, MaxPasses = 20;
+    const double MinTextHeight = 1, MaxTextHeight = 500;
     static readonly TimeSpan GrblSettingsTimeout = TimeSpan.FromSeconds(20);
     static readonly TimeSpan PortListAge = TimeSpan.FromSeconds(5);
     /// <summary>The same limits as the desktop's window.</summary>
@@ -33,7 +35,7 @@ public sealed class PageApi
     DateTime _portsRead;
 
     /// <param name="post">Runs an action on the session's thread (like the session's own).</param>
-    /// <param name="uploadFolder">Where files uploaded from the web page are saved before loading.</param>
+    /// <param name="uploadFolder">Where files uploaded from the web page are saved before loading, and the files made on the page (text).</param>
     public PageApi(MachineSession session, Action<Action> post, string uploadFolder)
     {
         _session = session;
@@ -140,6 +142,9 @@ public sealed class PageApi
                 return SetCompressors(origin, command.Value, command.Text, command.Number);
             case RemoteCommands.Convert when command.Text is { } file && command.Feeds is { Length: > 0 } feeds:
                 return Convert(origin, file, feeds);
+            case RemoteCommands.EngraveText when command.Text is { } text && command.Number is { } height
+                && command.Feeds is [var feed, ..] && command.Passes is { } passes:
+                return EngraveText(origin, text, height, feed, passes);
             default:
                 Note(origin, T($"neispravna komanda \"{command.Name}\", nije izvršena.", $"invalid command \"{command.Name}\", not done."));
                 return new CommandReply(false, T("Neispravna komanda.", "Invalid command."));
@@ -278,6 +283,62 @@ public sealed class PageApi
             $"converted for the laser ({feeds.Length} toolpaths, feed {string.Join(" / ", feeds)}) and saved: {path}"));
         return _session.LoadFile(path)
             ? new CommandReply(true)
+            : new CommandReply(false, T("Fajl nije učitan, razlog je u logu.", "File not loaded, the reason is in the log."));
+    }
+
+    /// <summary>
+    /// Makes a G-code file that engraves <paramref name="text"/> with the single-stroke font (bottom-left corner of
+    /// the text at the work zero), saves it in the upload folder and loads it. The values are offered next time.
+    /// </summary>
+    CommandReply EngraveText(string? origin, string text, double height, int feed, int passes)
+    {
+        var what = T("Gravura teksta", "Text engraving");
+        if (!_session.CanLoadFile)
+            return Refused(origin, what);
+        text = text.TrimEnd();
+        if (text.Trim().Length == 0)
+            return new CommandReply(false, T("Upiši tekst.", "Enter the text."));
+        if (text.Length > MaxEngraveText)
+            return new CommandReply(false, T($"Tekst je predug (najviše {MaxEngraveText} znakova).", $"The text is too long (at most {MaxEngraveText} characters)."));
+        if (GrblCore.Drawing.TextEngraving.Unsupported(text) is { Length: > 0 } missing)
+            return new CommandReply(false, T($"Ovih znakova nema u fontu: {missing}", $"These characters aren't in the font: {missing}"));
+        if (!(height >= MinTextHeight && height <= MaxTextHeight))
+            return new CommandReply(false, T($"Visina slova mora biti od {MinTextHeight} do {MaxTextHeight} mm.", $"The letter height must be from {MinTextHeight} to {MaxTextHeight} mm."));
+        if (feed < 1 || feed > MaxFeed)
+            return new CommandReply(false, T($"Feed mora biti cijeli broj od 1 do {MaxFeed}.", $"The feed must be a whole number from 1 to {MaxFeed}."));
+        if (passes < 1 || passes > MaxPasses)
+            return new CommandReply(false, T($"Broj prolaza mora biti od 1 do {MaxPasses}.", $"The number of passes must be from 1 to {MaxPasses}."));
+
+        Note(origin, $"{what}.");
+        var drawing = GrblCore.Drawing.TextEngraving.Layout(text, height);
+        var gcode = GrblCore.Drawing.LaserGCode.FromDrawing(drawing, feed, passes);
+        var size = FormattableString.Invariant($"{drawing.Width:0.#} × {drawing.Height:0.#} mm");
+        // The file's name: the start of the text's first line, so the history and the log say what it was.
+        var firstLine = text.Trim().Split('\n')[0].Trim();
+        if (firstLine.Length > 30)
+            firstLine = firstLine[..30].TrimEnd() + "…";
+        string path;
+        try
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(string.Join(Environment.NewLine, gcode) + Environment.NewLine);
+            path = SaveUpload(UploadName($"{T("Tekst", "Text")} - {firstLine}.tap"), bytes);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Note(origin, T($"fajl za tekst nije spremljen: {ex.Message}", $"the text's file wasn't saved: {ex.Message}"));
+            return new CommandReply(false, T("Fajl nije spremljen: ", "The file wasn't saved: ") + ex.Message);
+        }
+
+        var settings = _session.Settings;
+        settings.TextHeight = height;
+        settings.TextFeed = feed;
+        settings.TextPasses = passes;
+        _session.SaveSettings();
+        var heightText = height.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        _session.Log(T($"Tekst „{firstLine}“: slova {heightText} mm, {size}, feed {feed}, prolaza {passes}; spremljen: {path}",
+            $"Text \"{firstLine}\": letters {heightText} mm, {size}, feed {feed}, {passes} pass(es); saved: {path}"));
+        return _session.LoadFile(path)
+            ? new CommandReply(true, T($"Tekst je napravljen i učitan: {size}, donji lijevi ugao na nuli.", $"The text is made and loaded: {size}, bottom-left corner at the zero."))
             : new CommandReply(false, T("Fajl nije učitan, razlog je u logu.", "File not loaded, the reason is in the log."));
     }
 
@@ -463,6 +524,9 @@ public sealed class PageApi
             LaserPowerMax = session.UsesLaserPower ? session.LaserPowerMax : null,
             FileName = session.ProgramPath is { } path ? Path.GetFileName(path) : null,
             FileInfo = Texts.FileInfo(session),
+            TextHeight = session.Settings.TextHeight,
+            TextFeed = session.Settings.TextFeed,
+            TextPasses = session.Settings.TextPasses,
             Completed = job?.CompletedCount ?? 0,
             Total = job?.TotalCount ?? session.Program?.Lines.Count ?? 0,
             JobActive = session.JobActive,
@@ -512,6 +576,14 @@ public sealed class PageApi
     }
 
     static RemotePosition? ToRemote(Position? p) => p is { } q ? new RemotePosition(q.X, q.Y, q.Z) : null;
+
+    /// <summary>Jobs the page lists.</summary>
+    public const int HistoryShown = 20;
+
+    /// <summary>The last finished jobs, newest first; the running one is shown by the job panel instead.</summary>
+    public JobHistoryInfo[] BuildHistory() =>
+        [.. _session.History.Records.Where(r => r.Outcome != JobOutcome.Running).Reverse().Take(HistoryShown)
+            .Select(r => Texts.HistoryEntry(r, _session.Language))];
 
     public ToolpathData? BuildToolpath()
     {

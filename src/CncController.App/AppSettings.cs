@@ -12,6 +12,7 @@ public static class AppData
 
     public static readonly string SettingsFile = Path.Combine(Folder, "settings.json");
     public static readonly string PositionFile = Path.Combine(Folder, "position.json");
+    public static readonly string JobHistoryFile = Path.Combine(Folder, "jobs.json");
 
     /// <summary>Folder for the daily log files.</summary>
     public static readonly string LogFolder = Path.Combine(Folder, "logs");
@@ -59,6 +60,11 @@ public sealed class AppSettings
 
     /// <summary>Feed for every following toolpath (cutting), mm/min.</summary>
     public int OtherToolpathsFeed { get; set; } = 80;
+
+    /// <summary>Text engraving: height of a capital letter (mm), feed (mm/min) and passes, as last used.</summary>
+    public double TextHeight { get; set; } = 10;
+    public int TextFeed { get; set; } = 400;
+    public int TextPasses { get; set; } = 1;
 
     /// <summary>Last chosen manual jog step, mm.</summary>
     public double JogStep { get; set; } = 1;

@@ -104,10 +104,13 @@ public sealed class MachineSession : IDisposable
     /// <param name="logFolder">Folder for the daily log files; null to log only through <see cref="Logged"/>.</param>
     /// <param name="post">Runs an action on the session's thread, later (the desktop: <c>BeginInvoke</c>). Grbl's events arrive through it.</param>
     /// <param name="clock">Current time; tests pass their own.</param>
-    public MachineSession(AppSettings settings, PositionMemory memory, string? logFolder, Action<Action> post, Func<DateTime>? clock = null)
+    /// <param name="history">The job history to add to; null keeps one in memory only.</param>
+    public MachineSession(AppSettings settings, PositionMemory memory, string? logFolder, Action<Action> post, Func<DateTime>? clock = null,
+        JobHistory? history = null)
     {
         Settings = settings;
         _memory = memory;
+        History = history ?? new JobHistory();
         _logFolder = logFolder;
         _logFile = logFolder is null ? null : new LogFile(logFolder);
         _post = post;
@@ -150,6 +153,8 @@ public sealed class MachineSession : IDisposable
     /// an alarm, the automatic resume giving up, the connection lost. Remote access sends it to the phone.
     /// </summary>
     public event Action<string, string>? Notified;
+    /// <summary>A job was added to <see cref="History"/> or ended.</summary>
+    public event Action? HistoryChanged;
 
     // ----- State -----
 
@@ -1145,6 +1150,8 @@ public sealed class MachineSession : IDisposable
         _memory.JobPosition = null;
         SavePositionMemory();
         _jobClock.Restart();
+        if (!automatic)
+            BeginRecord(job);
         ProgressChanged?.Invoke();
         job.Start();
     }
@@ -1168,6 +1175,7 @@ public sealed class MachineSession : IDisposable
     {
         var last = job.LastCompletedLine;
         var where = last is null ? "" : T(" Zadnja prihvaćena linija: ", " Last accepted line: ") + $"{last.SourceLineNumber} ({last.Text}).";
+        TrackRecord(job, state);
         if (state != JobState.Break && _laserOffPause)
         {
             _laserOffPause = false;
@@ -1248,7 +1256,101 @@ public sealed class MachineSession : IDisposable
             _linesUnanswered = 0;
             _statusCurrent = false;
         }
+        EndRecordIfDone();
         Changed?.Invoke();
+    }
+
+    // ----- Job history -----
+
+    /// <summary>The last jobs and how they ended; the running one is added at its start.</summary>
+    public JobHistory History { get; }
+
+    // The job being recorded (from the start by hand until it ends, automatic resumes included), and its first line.
+    JobRecord? _record;
+    int _recordStart;
+    DateTime? _runningSince;
+    JobOutcome _recordOutcome;
+
+    void BeginRecord(GCodeJob job)
+    {
+        _recordStart = job.StartIndex;
+        _runningSince = null;
+        _recordOutcome = JobOutcome.Running;
+        _record = new JobRecord
+        {
+            FileName = JobName,
+            StartLine = job.StartIndex > 0 ? job.Program.Lines[job.StartIndex].SourceLineNumber : null,
+            Started = _clock(),
+            Outcome = JobOutcome.Running,
+            Lines = job.TotalCount - job.StartIndex,
+            EstimateSeconds = Estimate!.Remaining(job.StartIndex).TotalSeconds,
+        };
+        History.Add(_record);
+        SaveHistory();
+    }
+
+    /// <summary>Counts running time, pauses and lines done as the job's state changes, and how it ended.</summary>
+    void TrackRecord(GCodeJob job, JobState state)
+    {
+        if (_record is not { } record)
+            return;
+        var now = _clock();
+        if (state == JobState.Running)
+            _runningSince ??= now;
+        else if (_runningSince is { } since)
+        {
+            record.RunSeconds += (now - since).TotalSeconds;
+            _runningSince = null;
+        }
+        if (state == JobState.Paused || (state == JobState.Break && _laserOffPause))
+            record.Pauses++;
+        // An automatic resume starts a little before where it stopped; the furthest point counts.
+        record.LinesDone = Math.Max(record.LinesDone, job.CompletedCount - _recordStart);
+        if (Estimate is { } estimate)
+            record.EstimateDoneSeconds = (estimate.Remaining(_recordStart) - estimate.Remaining(_recordStart + record.LinesDone)).TotalSeconds;
+        _recordOutcome = state switch
+        {
+            JobState.Completed => JobOutcome.Finished,
+            JobState.Stopped => JobOutcome.Stopped,
+            JobState.Aborted => job.AbortReason switch
+            {
+                JobAbortReason.Reset => JobOutcome.EmergencyStop,
+                JobAbortReason.GrblRestarted => JobOutcome.GrblRestarted,
+                _ => JobOutcome.ConnectionLost,
+            },
+            _ => _recordOutcome,
+        };
+    }
+
+    /// <summary>Ends the record once nothing continues the job: no job running, no automatic resume waiting.</summary>
+    void EndRecordIfDone()
+    {
+        if (_record is not { } record || JobActive || AutoResumePending)
+            return;
+        _record = null;
+        var now = _clock();
+        if (_runningSince is { } since)
+            record.RunSeconds += (now - since).TotalSeconds;
+        _runningSince = null;
+        record.Ended = now;
+        record.Outcome = _recordOutcome == JobOutcome.Running ? JobOutcome.Stopped : _recordOutcome;
+        record.Restarts = _restartsThisJob;
+        record.AutoResumes = _autoResumes;
+        record.CompressorBreaks = _jobEvents.Count(e => e.Kind == JobEventKind.CompressorBreak);
+        SaveHistory();
+    }
+
+    void SaveHistory()
+    {
+        try
+        {
+            History.Save();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log(T("Historija poslova nije spremljena: ", "Job history not saved: ") + ex.Message);
+        }
+        HistoryChanged?.Invoke();
     }
 
     void OnJobLineFailed(GCodeLine line, string error)
@@ -1310,12 +1412,14 @@ public sealed class MachineSession : IDisposable
                 $"Automatic resume cancelled: {reason}. Click \"Resume from...\" when you are ready."));
         if (notify)
             Notify(T("Automatski nastavak odustao", "Automatic resume gave up"), $"{JobName}: {reason}. " + T("Nastavi ručno.", "Resume by hand."));
+        EndRecordIfDone();
     }
 
     void GiveUpAutoResume(string why)
     {
         Log(T("Automatski nastavak nije moguć: ", "Automatic resume not possible: ") + why);
         Notify(T("Automatski nastavak nije moguć", "Automatic resume not possible"), $"{JobName}: {why} " + T("Nastavi ručno.", "Resume by hand."));
+        EndRecordIfDone();
     }
 
     string JobName => Path.GetFileName(ProgramPath) ?? T("Posao", "Job");

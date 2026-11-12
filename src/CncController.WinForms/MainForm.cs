@@ -31,7 +31,8 @@ public partial class MainForm : Form
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
         _session = new MachineSession(
-            AppSettings.Load(AppData.SettingsFile), PositionMemory.Load(AppData.PositionFile), AppData.LogFolder, OnUi);
+            AppSettings.Load(AppData.SettingsFile), PositionMemory.Load(AppData.PositionFile), AppData.LogFolder, OnUi,
+            history: JobHistory.Load(AppData.JobHistoryFile));
         // The page shows the log, warnings and questions itself; it loads after the first lines, which it gets from here.
         _session.Logged += (time, text) =>
         {

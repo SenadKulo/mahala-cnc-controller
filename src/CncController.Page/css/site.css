@@ -369,6 +369,7 @@ body {
 .area-drawing { order: 4; }
 .area-log { order: 5; }
 .area-notify { order: 6; }
+.area-history { order: 7; }
 
 @media (min-width: 992px) {
     .layout {
@@ -810,6 +811,29 @@ body {
 .log-line.kind-resume .log-text { color: #9ec1ea; }
 .log-line.kind-done .log-text { color: #6fe09a; }
 .log-line.kind-grbl .log-text { color: var(--muted); }
+
+/* Job history: one row per job, the newest first. */
+.history-list {
+    max-height: 22rem;
+    overflow-y: auto;
+}
+
+.history-row {
+    padding: .5rem 0;
+    border-top: 1px solid var(--border);
+    font-size: .85rem;
+}
+
+.history-top {
+    display: flex;
+    align-items: baseline;
+    gap: .75rem;
+}
+
+.history-time { color: var(--faint); flex: none; font-family: var(--font-mono); font-size: .75rem; }
+.history-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.history-outcome { flex: none; font-weight: 600; }
+.history-facts { color: var(--muted); font-size: .78rem; margin-top: .15rem; }
 
 .command-box {
     display: flex;

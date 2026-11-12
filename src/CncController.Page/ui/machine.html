@@ -29,6 +29,7 @@
     <symbol id="i-move" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M8 7l4-4 4 4M8 17l4 4 4-4" /></g></symbol>
     <symbol id="i-chart" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8M3 21h18" /></g></symbol>
     <symbol id="i-list" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 6h16M4 12h16M4 18h10" /></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M5 6V4h14v2M12 4v16M9 20h6" /></symbol>
 </svg>
 
 <header class="statusbar">
@@ -103,9 +104,14 @@
                 <div class="card-body">
                     <div class="card-top">
                         <h2 class="card-title" data-en="Job">Posao</h2>
-                        <button type="button" id="openFile" class="btn btn-sm btn-ghost-wood btn-icon desktop-only d-none" data-can="canLoadFile" disabled
-                                title="Učitaj G-code (Ctrl+O). Originalni ArtCAM fajl se prvo konvertuje za laser."
-                                data-en-title="Load G-code (Ctrl+O). An original ArtCAM file is converted for the laser first."><svg class="icon"><use href="#i-file" /></svg><span data-en="Open file...">Otvori fajl...</span></button>
+                        <div class="d-flex gap-2">
+                            <button type="button" id="textOpen" class="btn btn-sm btn-ghost-wood btn-icon" data-can="canLoadFile" disabled
+                                    title="Napravi posao od teksta: gravura jednolinijskim fontom, bez ArtCAM-a."
+                                    data-en-title="Make a job from text: engraving with a single-stroke font, no ArtCAM needed."><svg class="icon"><use href="#i-text" /></svg><span data-en="Text...">Tekst...</span></button>
+                            <button type="button" id="openFile" class="btn btn-sm btn-ghost-wood btn-icon desktop-only d-none" data-can="canLoadFile" disabled
+                                    title="Učitaj G-code (Ctrl+O). Originalni ArtCAM fajl se prvo konvertuje za laser."
+                                    data-en-title="Load G-code (Ctrl+O). An original ArtCAM file is converted for the laser first."><svg class="icon"><use href="#i-file" /></svg><span data-en="Open file...">Otvori fajl...</span></button>
+                        </div>
                     </div>
                     <form id="uploadForm" method="post" enctype="multipart/form-data" action="/?handler=Upload" class="d-flex gap-2 mb-2 web-only">
                         <input type="file" name="file" id="uploadFile" class="form-control form-control-sm"
@@ -136,6 +142,24 @@
                             <button type="button" id="convertCancel" class="btn btn-quiet" data-en="Cancel">Odustani</button>
                         </div>
                     </div>
+
+                    <form id="textPanel" class="panel mt-2 d-none">
+                        <div class="small mb-2" data-en="Text to engrave with a single-stroke font (letters, digits, č ć š ž đ). The bottom-left corner of the text goes to the zero.">Tekst za gravuru jednolinijskim fontom (slova, brojevi, č ć š ž đ). Donji lijevi ugao teksta ide na nulu.</div>
+                        <textarea id="textInput" class="form-control form-control-sm mb-2" rows="2" maxlength="500"
+                                  aria-label="Tekst" data-en-aria-label="Text"></textarea>
+                        <div class="d-flex flex-wrap gap-2 mb-2 small">
+                            <label><span data-en="Letter height (mm)">Visina slova (mm)</span>
+                                <input type="number" id="textHeight" class="form-control form-control-sm feed-input" min="1" max="500" step="0.5" required /></label>
+                            <label><span>Feed (mm/min)</span>
+                                <input type="number" id="textFeed" class="form-control form-control-sm feed-input" min="1" max="10000" step="1" required /></label>
+                            <label><span data-en="Passes">Prolazi</span>
+                                <input type="number" id="textPasses" class="form-control form-control-sm feed-input" min="1" max="20" step="1" required /></label>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" id="textStart" class="btn btn-wood flex-fill" disabled data-en="Make and load">Napravi i učitaj</button>
+                            <button type="button" id="textCancel" class="btn btn-quiet" data-en="Cancel">Odustani</button>
+                        </div>
+                    </form>
 
                     <div class="job-overview mt-3">
                         <div class="ring">
@@ -361,6 +385,15 @@
                     <span><span class="swatch" style="border-radius: 50%; background: var(--tone-orange)"></span><span data-en="break">pauza</span></span>
                     <span><span class="swatch" style="border-radius: 50%; background: var(--tone-red)"></span>restart</span>
                     <span><span class="swatch line" style="background: var(--tone-green)"></span><span data-en="zero">nula</span></span>
+                </div>
+            </section>
+
+            <section class="card area-history" data-tab="job">
+                <div class="card-body">
+                    <h2 class="card-title mb-2" data-en="Job history">Historija poslova</h2>
+                    <div class="small text-muted mb-2" data-en="The last 20 jobs. &quot;Ran&quot; is the time the CNC worked, without pauses; the estimate is for the part that was done.">Zadnjih 20 poslova. „Radio“ je vrijeme rada CNC-a bez pauza; procjena je za urađeni dio.</div>
+                    <div id="historyEmpty" class="small text-muted" data-en="No finished jobs yet.">Još nema završenih poslova.</div>
+                    <div id="historyList" class="history-list"></div>
                 </div>
             </section>
         </div>

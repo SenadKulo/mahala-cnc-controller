@@ -211,6 +211,11 @@ public sealed class MachineSessionTests : IDisposable
         Assert.Equal("Posao završen", title);
         Assert.Contains("Grbl se restartovao 1 put(a), automatskih nastavaka: 1.", text);
         Assert.Equal(JobEventKind.Restart, Assert.Single(_ui.Invoke(() => _session.JobEvents.ToList())).Kind);
+        // One job in the history, the automatic resume included.
+        var record = Assert.Single(_ui.Invoke(() => _session.History.Records.ToList()));
+        Assert.Equal(JobOutcome.Finished, record.Outcome);
+        Assert.Equal((1, 1), (record.Restarts, record.AutoResumes));
+        Assert.Equal(record.Lines, record.LinesDone);
     }
 
     [Fact]
@@ -228,6 +233,40 @@ public sealed class MachineSessionTests : IDisposable
         WaitUntil(() => _session.PendingQuestion is not null);
         Assert.True(Logged("Posao prekinut jer se Grbl restartovao."));
         Assert.False(_ui.Invoke(() => _session.AutoResumePending));
+        var aborted = Assert.Single(_ui.Invoke(() => _session.History.Records.ToList()));
+        Assert.Equal(JobOutcome.GrblRestarted, aborted.Outcome);
+        Assert.Equal(1, aborted.Restarts);
+        Assert.NotNull(aborted.Ended);
+    }
+
+    [Fact]
+    public void History_StopAndEmergencyStop_EndTheirJobs()
+    {
+        ConnectSimulator();
+        WaitUntil(() => _session.PositionConfirmed);
+        LoadSquares(100);
+
+        _ui.Invoke(() => _session.StartJob());
+        WaitUntil(() => _session.Job!.CompletedCount > 20);
+        // Running: in the history from the start, but not on the page yet.
+        Assert.Equal(JobOutcome.Running, Assert.Single(_ui.Invoke(() => _session.History.Records.ToList())).Outcome);
+        Assert.Empty(_ui.Invoke(() => new PageApi(_session, _ui.Post, Path.GetTempPath()).BuildHistory()));
+        _ui.Invoke(_session.Stop);
+        WaitUntil(() => _session.History.Records[^1].Outcome != JobOutcome.Running);
+
+        WaitUntil(() => _session.CanStart && _session.LastStatus?.State == MachineState.Idle);
+        _ui.Invoke(() => _session.StartJob());
+        WaitUntil(() => _session.Job!.CompletedCount > 20);
+        _ui.Invoke(_session.Reset);
+        WaitUntil(() => _session.History.Records.Count == 2 && _session.History.Records[^1].Outcome != JobOutcome.Running);
+
+        var records = _ui.Invoke(() => _session.History.Records.ToList());
+        Assert.Equal([JobOutcome.Stopped, JobOutcome.EmergencyStop], records.Select(r => r.Outcome));
+        Assert.All(records, r => Assert.InRange(r.LinesDone, 1, r.Lines - 1));
+        Assert.All(records, r => Assert.True(r.EstimateDoneSeconds > 0 && r.EstimateDoneSeconds < r.EstimateSeconds));
+        // On the page: newest first, in the program's language.
+        var shown = _ui.Invoke(() => new PageApi(_session, _ui.Post, Path.GetTempPath()).BuildHistory());
+        Assert.Equal(["Hitni stop", "Zaustavljen"], shown.Select(j => j.Outcome));
     }
 
     [Fact]
@@ -258,6 +297,10 @@ public sealed class MachineSessionTests : IDisposable
         Assert.False(_ui.Invoke(() => _session.LaserOffPause));
         Assert.True(PositionRecovery.Same(new Position(1, 2, 0), Simulator.WorkPosition), Simulator.WorkPosition.ToString());
         Assert.Empty(_ui.Invoke(() => _session.JobEvents.ToList()));
+        var record = Assert.Single(_ui.Invoke(() => _session.History.Records.ToList()));
+        Assert.Equal(JobOutcome.Finished, record.Outcome);
+        Assert.Equal(1, record.Pauses);
+        Assert.Equal(record.Lines, record.LinesDone);
     }
 
     [Fact]
@@ -291,6 +334,11 @@ public sealed class MachineSessionTests : IDisposable
         Assert.Equal(JobEventKind.CompressorBreak, pause.Kind);
         Assert.True(pause.Line > 0);
         Assert.NotNull(pause.Until);
+        var breakRecord = Assert.Single(_ui.Invoke(() => _session.History.Records.ToList()));
+        Assert.Equal(JobOutcome.Finished, breakRecord.Outcome);
+        Assert.Equal(1, breakRecord.CompressorBreaks);
+        // The break isn't running time: from start to end took longer than the CNC ran.
+        Assert.True((breakRecord.Ended!.Value - breakRecord.Started).TotalSeconds > breakRecord.RunSeconds + 10);
     }
 
     [Fact]
@@ -340,5 +388,42 @@ public sealed class MachineSessionTests : IDisposable
         Assert.Equal(500, _settings.SeekRate);
         Assert.Equal(1000, _ui.Invoke(() => _session.LaserPowerMax));
         Assert.Equal("Najveća brzina X (mm/min) - i za prazni hod G0", Texts.GrblSettingMeaning(_ui.Invoke(() => _session.Version), 110, Language.Bosnian));
+    }
+
+    [Fact]
+    public void EngraveText_MakesAFileThatRunsOnTheSimulator()
+    {
+        var uploads = Path.Combine(Path.GetTempPath(), $"engrave-{Guid.NewGuid():N}");
+        var api = new PageApi(_session, _ui.Post, uploads);
+        ConnectSimulator();
+        WaitUntil(() => _session.PositionConfirmed);
+
+        CncController.Remote.CommandReply Engrave(string text, double height = 5, int feed = 3000, int passes = 1) =>
+            _ui.Invoke(() => api.Execute(new CncController.Remote.RemoteCommand
+            {
+                Name = CncController.Remote.RemoteCommands.EngraveText, Text = text, Number = height, Feeds = [feed], Passes = passes,
+            }, RemoteLink.Origin));
+
+        // Refused before anything is made: characters the font doesn't have, a bad height.
+        var refused = Engrave("Ćevapi €5");
+        Assert.False(refused.Done);
+        Assert.Contains("€", refused.Text);
+        Assert.False(Engrave("Mahala", height: 0).Done);
+        Assert.False(Directory.Exists(uploads) && Directory.EnumerateFiles(uploads).Any());
+
+        var reply = Engrave("Mahala Đžš\nCNC", passes: 2);
+        Assert.True(reply.Done, reply.Text);
+        Assert.Contains("mm", reply.Text);
+        Assert.StartsWith("Tekst - Mahala Đžš", Path.GetFileName(_ui.Invoke(() => _session.ProgramPath)));
+        Assert.Equal((5.0, 3000, 2), (_settings.TextHeight, _settings.TextFeed, _settings.TextPasses));
+        Assert.Equal(5.0, _ui.Invoke(api.BuildSnapshot).TextHeight);
+
+        _ui.Invoke(() => _session.StartJob());
+        WaitUntil(() => _session.Job?.State == JobState.Completed, tick: true);
+        Assert.DoesNotContain(_log, line => line.Contains("error", StringComparison.OrdinalIgnoreCase));
+        Assert.False(_session.Simulator!.LaserOn);
+        // Back at the work zero at the end.
+        WaitUntil(() => _session.LastStatus is { State: MachineState.Idle, WorkPosition: { } w } && Math.Abs(w.X) + Math.Abs(w.Y) + Math.Abs(w.Z) < 0.01);
+        Assert.Equal(JobOutcome.Finished, _ui.Invoke(() => _session.History.Records[^1].Outcome));
     }
 }

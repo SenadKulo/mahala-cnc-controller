@@ -5,8 +5,7 @@ namespace CncController.WinForms;
 /// <summary>
 /// The terms of use and the laser safety warning, accepted once before the program is used
 /// (<see cref="AppSettings.AcceptedTerms"/>); a changed text gets a new <see cref="Version"/> and is asked again.
-/// It also tells what the program sends over the internet, and lets the update check be turned off
-/// (SignPath Foundation's terms for signed programs).
+/// It also tells what the program sends over the internet, and lets the update check be turned off.
 /// </summary>
 public partial class TermsDialog : Form
 {

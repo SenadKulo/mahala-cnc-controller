@@ -174,6 +174,46 @@ public static class Texts
         _ => l.T("Prekinut", "Aborted"),
     };
 
+    // ----- Job history -----
+
+    /// <summary>A job of the history as the page lists it.</summary>
+    public static JobHistoryInfo HistoryEntry(JobRecord r, Language l)
+    {
+        var (outcome, tone) = r.Outcome switch
+        {
+            JobOutcome.Finished => (l.T("Završen", "Finished"), Tone.Green),
+            JobOutcome.Stopped => (l.T("Zaustavljen", "Stopped"), Tone.Orange),
+            JobOutcome.EmergencyStop => (l.T("Hitni stop", "Emergency stop"), Tone.Red),
+            JobOutcome.GrblRestarted => (l.T("Prekinut: Grbl se restartovao", "Aborted: Grbl restarted"), Tone.Red),
+            JobOutcome.ConnectionLost => (l.T("Prekinut: veza prekinuta", "Aborted: connection lost"), Tone.Red),
+            JobOutcome.ProgramClosed => (l.T("Program zatvoren tokom posla", "Program closed during the job"), Tone.Grey),
+            _ => (l.T("Radi", "Running"), Tone.Blue),
+        };
+        var run = TimeSpan.FromSeconds(r.RunSeconds);
+        string? estimate = r.EstimateDoneSeconds > 0 ? Duration(TimeSpan.FromSeconds(r.EstimateDoneSeconds)) : null;
+        // Only with enough to compare: under a minute, rounding says more than the estimate.
+        string? deviation = r.EstimateDoneSeconds >= 60 && r.RunSeconds > 0
+            ? ((r.RunSeconds / r.EstimateDoneSeconds - 1) * 100).ToString("+0;-0;0", System.Globalization.CultureInfo.InvariantCulture) + " %"
+            : null;
+        var lines = r.LinesDone == r.Lines ? $"{r.Lines}" : $"{r.LinesDone}/{r.Lines}";
+
+        var details = new List<string>();
+        if (r.StartLine is { } from)
+            details.Add(l.T($"od linije {from}", $"from line {from}"));
+        if (r.Pauses > 0)
+            details.Add(l.T($"pauze: {r.Pauses}", $"pauses: {r.Pauses}"));
+        if (r.CompressorBreaks > 0)
+            details.Add(l.T($"planirane pauze: {r.CompressorBreaks}", $"scheduled breaks: {r.CompressorBreaks}"));
+        if (r.Restarts > 0)
+            details.Add(l.T($"restarti: {r.Restarts}, sam nastavio: {r.AutoResumes}", $"restarts: {r.Restarts}, resumed by itself: {r.AutoResumes}"));
+        // From start to end, when pauses, breaks or waiting after a restart made it much longer than the running time.
+        if (r.Ended is { } end && end - r.Started - run > TimeSpan.FromMinutes(1))
+            details.Add(l.T($"ukupno sa pauzama {Duration(end - r.Started)}", $"{Duration(end - r.Started)} with pauses"));
+
+        return new JobHistoryInfo(r.Started, r.FileName, outcome, tone, Duration(run), estimate, deviation, lines,
+            details.Count > 0 ? string.Join(", ", details) : null);
+    }
+
     // ----- Grbl's settings, errors and alarms -----
 
     /// <summary>What a Grbl setting does: 0.8 has its own numbering, 0.9 and 1.1 share theirs.</summary>

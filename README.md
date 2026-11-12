@@ -13,6 +13,8 @@ The program speaks English and Bosnian (one click switches the language).
 - **Grbl 0.8, 0.9 and 1.1**: recognises the version, explains errors and alarms, reads, changes and saves the settings to a file (`$$`).
 - **Jobs**: loads G-code, shows the drawing with the finished part and the laser live, a frame to check the job fits
   on the material, and an estimate of the time left. Original ArtCAM files are converted for the laser.
+- **Text engraving**: type a text, the letter height, feed and passes; the program makes the G-code with a
+  single-stroke font (Hershey Simplex) and loads it. No CAM program needed.
 - **From your phone, in your home network**: the same page on the phone, opened by scanning a QR code; a 6-digit
   code keeps others on the network out. No account, no internet.
 - **Resume after a restart**: if the Arduino restarts in the middle of a job (power glitches, USB), the program
@@ -55,18 +57,13 @@ this repo, restored by `dotnet tool restore`). The result is in `artifacts\relea
 - `src/CncController.Remote`: the messages between the page and the program.
 - `tests/`: xUnit tests; most run the program against the simulator.
 
-## Code signing policy
+## Releases
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org).
+The installer and the program are built from this repository by GitHub Actions
+([release.yml](.github/workflows/release.yml)) when a version tag is pushed.
 
-- The installer and the program are built from this repository by GitHub Actions
-  ([release.yml](.github/workflows/release.yml)) when a version tag is pushed; only these builds are signed.
-- Every signing request is approved by hand.
-- Committers and reviewers: [Senad Kulo](https://github.com/SenadKulo)
-- Approvers: [Senad Kulo](https://github.com/SenadKulo)
-
-Releases up to and including 1.0.3 are not signed.
+Releases are not code-signed, so Windows shows "Windows protected your PC" when `Setup.exe` starts; the installation
+continues with **More info → Run anyway**.
 
 ## Privacy policy
 

@@ -80,6 +80,7 @@
     connection.on("Snapshot", s => { snapshot = s; showSnapshot(); });
     connection.on("Log", (lines, replace) => showLog(lines, replace));
     connection.on("Toolpath", data => { drawing.setToolpath(data); closeResume(); });
+    connection.on("History", jobs => showHistory(jobs));
 
     connection.onreconnecting(() => setSite(false));
     connection.onreconnected(() => setSite(true));
@@ -127,6 +128,49 @@
             t(" Prikaz ispod je zadnje stanje koje je poslao.", " Below is the last state it sent.");
     }
 
+    // ----- Job history -----
+
+    // The last finished jobs, newest first, with their texts from the desktop (in its language).
+    let history = [];
+
+    function showHistory(jobs) {
+        history = Array.isArray(jobs) ? jobs : [];
+        const list = $("historyList");
+        list.replaceChildren();
+        $("historyEmpty").classList.toggle("d-none", history.length > 0);
+        for (const job of history) {
+            const row = document.createElement("div");
+            row.className = "history-row";
+
+            const top = document.createElement("div");
+            top.className = "history-top";
+            const when = document.createElement("span");
+            when.className = "history-time";
+            when.textContent = formatDateTime(job.started);
+            const file = document.createElement("span");
+            file.className = "history-file";
+            file.textContent = job.file;
+            file.title = job.file;
+            const outcome = document.createElement("span");
+            outcome.className = "history-outcome tone-" + tones[job.tone];
+            outcome.textContent = job.outcome;
+            top.append(when, file, outcome);
+
+            const facts = [t("radio ", "ran ") + job.duration];
+            if (job.estimate)
+                facts.push(t("procjena ", "estimate ") + job.estimate + (job.deviation ? ` (${job.deviation})` : ""));
+            facts.push(t("linije ", "lines ") + job.lines);
+            if (job.details)
+                facts.push(job.details);
+            const bottom = document.createElement("div");
+            bottom.className = "history-facts";
+            bottom.textContent = facts.join(" · ");
+
+            row.append(top, bottom);
+            list.append(row);
+        }
+    }
+
     // ----- State -----
 
     function showSnapshot() {
@@ -137,6 +181,7 @@
             setSite(siteConnected);
             showDesktop();
             drawing.redraw();
+            showHistory(history);
             if (!host && !lan)
                 push.refresh();
         }
@@ -254,7 +299,7 @@
             el.disabled = busy || !(online && (el.dataset.can === "always" || snapshot[el.dataset.can]));
         $("connectButton").disabled = busy || !(online && (snapshot.canDisconnect || (snapshot.canConnect && $("port").value)));
         $("port").disabled = $("baud").disabled = busy || !(online && snapshot.canConnect);
-        $("convertStart").disabled = busy || !(online && snapshot.canLoadFile);
+        $("convertStart").disabled = $("textStart").disabled = busy || !(online && snapshot.canLoadFile);
         for (const box of document.querySelectorAll("[data-setting]"))
             box.disabled = busy || !online;
         $("uploadButton").disabled = busy || !(online && snapshot.canLoadFile && $("uploadFile").files.length > 0);
@@ -266,18 +311,23 @@
 
     // ----- Commands -----
 
-    /// Sends a command to the desktop and shows its answer; true if it was done.
+    /// Sends a command to the desktop and shows why if it wasn't done; true if it was done.
     async function send(command) {
+        return (await sendForReply(command))?.done === true;
+    }
+
+    /// Like send, but hands back the desktop's reply (its text also when done); null if it didn't arrive.
+    async function sendForReply(command) {
         busy = true;
         updateControls();
         try {
             const reply = await connection.invoke("Command", command);
             if (!reply.done)
                 showMessage(reply.text || t("Komanda nije izvršena.", "The command was not done."), "warning");
-            return reply.done;
+            return reply;
         } catch {
             showMessage(t("Komanda nije poslana: ", "The command was not sent: ") + noLink() + ".", "danger");
-            return false;
+            return null;
         } finally {
             busy = false;
             updateControls();
@@ -590,6 +640,46 @@
         if (await send({ name: "Convert", text: convertFile, feeds })) {
             closeConvert();
             showMessage(t("Fajl je konvertovan i učitan.", "The file is converted and loaded."), "success");
+        }
+    });
+
+    // ----- Text engraving -----
+
+    /// Opens the text form with the values last used (kept by the desktop), or closes it.
+    $("textOpen").addEventListener("click", () => {
+        const panel = $("textPanel");
+        if (!panel.classList.contains("d-none")) {
+            panel.classList.add("d-none");
+            return;
+        }
+        $("textHeight").value = snapshot?.textHeight || 10;
+        $("textFeed").value = snapshot?.textFeed || 400;
+        $("textPasses").value = snapshot?.textPasses || 1;
+        panel.classList.remove("d-none");
+        $("textInput").focus();
+    });
+
+    $("textCancel").addEventListener("click", () => $("textPanel").classList.add("d-none"));
+
+    $("textPanel").addEventListener("submit", async e => {
+        e.preventDefault();
+        const text = $("textInput").value;
+        const height = Number($("textHeight").value);
+        const feed = Number($("textFeed").value);
+        const passes = Number($("textPasses").value);
+        if (!text.trim()) {
+            showMessage(t("Upiši tekst.", "Enter the text."), "warning");
+            return;
+        }
+        if (!(height >= 1 && height <= 500) || !Number.isInteger(feed) || feed < 1 || feed > 10000 || !Number.isInteger(passes) || passes < 1 || passes > 20) {
+            showMessage(t("Visina 1-500 mm, feed cijeli broj 1-10000, prolazi 1-20.", "Height 1-500 mm, feed a whole number 1-10000, passes 1-20."), "warning");
+            return;
+        }
+        const reply = await sendForReply({ name: "EngraveText", text, number: height, feeds: [feed], passes });
+        if (reply?.done) {
+            // The text stays in the box, for a change and another try.
+            $("textPanel").classList.add("d-none");
+            showMessage(reply.text || t("Tekst je napravljen i učitan.", "The text is made and loaded."), "success");
         }
     });
 
