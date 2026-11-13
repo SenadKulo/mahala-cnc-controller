@@ -64,8 +64,10 @@ public class TextEngravingTests
             "G21", "G90", "M5", "F400",
             "G0 X0 Y0", "M3", "G1 X10 Y0", "G1 X10 Y5", "G1 X0 Y5",
             "M5", "G0 X20 Y0", "M3", "G1 X30 Y0.123",
-            "M5", "G0 X0 Y0", "G0 Z0",
+            "M5", "G0 X0 Y0",
         ], lines);
+        // Opened again later, it is not taken for an ArtCAM file.
+        Assert.False(ArtCamLaserConverter.NeedsConversion(lines));
     }
 
     [Fact]
@@ -75,8 +77,8 @@ public class TextEngravingTests
         var once = LaserGCode.FromDrawing(drawing, 300);
         var twice = LaserGCode.FromDrawing(drawing, 300, passes: 2);
 
-        Assert.Equal(once.Count * 2 - 6, twice.Count); // the header and the way back once
-        Assert.Equal(["M5", "G0 X0 Y0", "G0 Z0"], twice[^3..]);
+        Assert.Equal(once.Count * 2 - 5, twice.Count); // the header and the way back once
+        Assert.Equal(["M5", "G0 X0 Y0"], twice[^2..]);
         var program = GCodeProgram.Parse(twice);
         Assert.True(program.CanRun);
         Assert.Empty(program.Issues);

@@ -278,10 +278,11 @@ body {
     background: currentColor;
 }
 
-.pill.tone-green { background: rgba(60, 207, 110, .14); }
-.pill.tone-blue { background: rgba(106, 162, 232, .15); }
-.pill.tone-orange { background: rgba(245, 158, 11, .15); }
-.pill.tone-red { background: rgba(240, 75, 85, .16); }
+/* After .pill, whose muted colour would otherwise win over .tone-*. */
+.pill.tone-green { background: rgba(60, 207, 110, .14); color: var(--tone-green); }
+.pill.tone-blue { background: rgba(106, 162, 232, .15); color: var(--tone-blue); }
+.pill.tone-orange { background: rgba(245, 158, 11, .15); color: var(--tone-orange); }
+.pill.tone-red { background: rgba(240, 75, 85, .16); color: var(--tone-red); }
 .pill.tone-blue .dot { animation: dot-glow 1.6s ease-in-out infinite; }
 
 .pill.laser-on {

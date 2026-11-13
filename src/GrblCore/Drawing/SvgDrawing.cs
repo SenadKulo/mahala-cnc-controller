@@ -7,14 +7,15 @@ namespace GrblCore.Drawing;
 
 /// <summary>
 /// What an SVG file gives for the laser: its outlines as a <see cref="LaserDrawing"/> in mm at the file's own size,
-/// and how many elements that aren't lines (text, images, references) were left out.
+/// and how many elements that aren't lines (text, images, broken references) were left out.
 /// </summary>
 public sealed record SvgImport(LaserDrawing Drawing, int Skipped);
 
 /// <summary>
 /// Reads the outlines of an SVG file: paths (every command, curves and arcs flattened to short lines), lines,
-/// polylines, polygons, rectangles, circles and ellipses, with their transforms and the document's units. Fill and
-/// stroke are ignored: every outline is burned once. Text and images aren't lines; they are counted in
+/// polylines, polygons, rectangles, circles and ellipses, with their transforms and the document's units; copies made
+/// with &lt;use&gt; (of shapes, groups and symbols) and nested &lt;svg&gt; with their own view box. Elements hidden by an
+/// attribute, a style or a CSS rule in &lt;style&gt; are left out. Fill and stroke are ignored: every outline is burned once. Text and images aren't lines; they are counted in
 /// <see cref="SvgImport.Skipped"/> (text must be converted to paths in the drawing program).
 /// </summary>
 public static class SvgDrawing
@@ -29,7 +30,9 @@ public static class SvgDrawing
         "defs", "clipPath", "mask", "symbol", "marker", "pattern", "metadata", "title", "desc", "style", "script",
         "linearGradient", "radialGradient", "filter", "namedview",
     ];
-    static readonly HashSet<string> NotLines = ["text", "image", "use", "foreignObject"];
+    static readonly HashSet<string> NotLines = ["text", "image", "foreignObject"];
+    /// <summary>Copies made with &lt;use&gt;, in all; past this (copies of copies of copies) the rest are skipped.</summary>
+    const int MaxUses = 10000;
 
     /// <exception cref="FormatException">Not an SVG file, or nothing in it to burn.</exception>
     public static SvgImport Parse(string svg)
@@ -54,7 +57,7 @@ public static class SvgDrawing
         if (root.Name.LocalName != "svg")
             throw new FormatException("Not an SVG file.");
 
-        var content = new Reader();
+        var content = new Reader(root);
         content.Element(root, RootMatrix(root));
         if (content.Paths.Count == 0)
             throw new FormatException("The SVG has no lines to burn.");
@@ -130,6 +133,29 @@ public static class SvgDrawing
         public readonly List<List<PathPoint>> Paths = [];
         public int Skipped;
 
+        readonly XElement _root;
+        /// <summary>Elements by id, for &lt;use&gt; (the first one when an id repeats).</summary>
+        readonly Dictionary<string, XElement> _ids = [];
+        readonly List<CssSelector> _hiddenByCss;
+        /// <summary>The size of the current viewport in user units, for sizes in % (nested &lt;svg&gt;, &lt;use&gt; of a symbol).</summary>
+        (double Width, double Height) _viewport;
+        /// <summary>Elements being copied right now: a &lt;use&gt; that points back into itself is skipped.</summary>
+        readonly HashSet<XElement> _using = [];
+        int _uses;
+
+        public Reader(XElement root)
+        {
+            _root = root;
+            foreach (var element in root.DescendantsAndSelf())
+                if (Attr(element, "id") is { Length: > 0 } id)
+                    _ids.TryAdd(id, element);
+            _hiddenByCss = CssSelector.Hiding(string.Concat(root.Descendants().Where(e => e.Name.LocalName == "style").Select(e => e.Value + "\n")));
+            var viewBox = Numbers(Attr(root, "viewBox"));
+            _viewport = viewBox.Count == 4 && viewBox[2] > 0 && viewBox[3] > 0
+                ? (viewBox[2], viewBox[3])
+                : ((LengthMm(Attr(root, "width")) ?? 100) / MmPerPx, (LengthMm(Attr(root, "height")) ?? 100) / MmPerPx);
+        }
+
         public void Element(XElement element, Matrix parent)
         {
             var name = element.Name.LocalName;
@@ -143,10 +169,19 @@ public static class SvgDrawing
             var matrix = parent * Transform(Attr(element, "transform"));
             switch (name)
             {
+                case "svg" when !ReferenceEquals(element, _root):
+                    {
+                        // A nested <svg>: its own place and size in the parent, and its view box fitted into it.
+                        var fit = Fit(element, Length(element, "x"), Length(element, "y"),
+                            Size(element, "width", _viewport.Width), Size(element, "height", _viewport.Height), out var inner);
+                        Children(element, matrix * fit, inner);
+                        break;
+                    }
                 case "svg" or "g" or "a" or "switch":
-                    // A nested <svg> with its own view box is rare; its content is taken in the parent's units.
-                    foreach (var child in element.Elements())
-                        Element(child, matrix);
+                    Children(element, matrix, _viewport);
+                    break;
+                case "use":
+                    Use(element, matrix);
                     break;
                 case "path":
                     PathData(Attr(element, "d") ?? "", matrix);
@@ -172,12 +207,99 @@ public static class SvgDrawing
             }
         }
 
-        static bool Hidden(XElement element)
+        void Children(XElement element, Matrix matrix, (double Width, double Height) viewport)
+        {
+            var outer = _viewport;
+            _viewport = viewport;
+            foreach (var child in element.Elements())
+                Element(child, matrix);
+            _viewport = outer;
+        }
+
+        /// <summary>
+        /// &lt;use href="#id"&gt;: a copy of that element moved by x, y. A symbol or an &lt;svg&gt; is fitted into the
+        /// use's width and height (its own, or the whole viewport, when the use has none), as a nested &lt;svg&gt;.
+        /// </summary>
+        void Use(XElement use, Matrix matrix)
+        {
+            var href = (use.Attribute("href") ?? use.Attribute(XName.Get("href", "http://www.w3.org/1999/xlink")))?.Value.Trim();
+            if (href is not ['#', _, ..] || !_ids.TryGetValue(href[1..], out var target) || _using.Contains(target)
+                || ReferenceEquals(target, _root) || ++_uses > MaxUses)
+            {
+                Skipped++;
+                return;
+            }
+            double x = Length(use, "x"), y = Length(use, "y");
+            _using.Add(target);
+            try
+            {
+                if (target.Name.LocalName is "symbol" or "svg")
+                {
+                    if (Hidden(target))
+                        return;
+                    double width = Attr(use, "width") is not null ? Size(use, "width", _viewport.Width) : Size(target, "width", _viewport.Width);
+                    double height = Attr(use, "height") is not null ? Size(use, "height", _viewport.Height) : Size(target, "height", _viewport.Height);
+                    var fit = Fit(target, x, y, width, height, out var inner);
+                    Children(target, matrix * fit, inner);
+                }
+                else
+                    Element(target, matrix * Matrix.Translate(x, y));
+            }
+            finally
+            {
+                _using.Remove(target);
+            }
+        }
+
+        /// <summary>A width or height in user units; "50%" of the viewport, and the whole viewport when missing.</summary>
+        static double Size(XElement element, string name, double full)
+        {
+            var value = Attr(element, name)?.Trim();
+            if (value is null or "auto")
+                return full;
+            if (value.EndsWith('%'))
+                return double.TryParse(value[..^1], NumberStyles.Float, CultureInfo.InvariantCulture, out var percent) ? full * percent / 100 : full;
+            return Length(element, name);
+        }
+
+        /// <summary>
+        /// Places a viewport at <paramref name="x"/>, <paramref name="y"/> of <paramref name="width"/> × <paramref name="height"/>
+        /// and fits <paramref name="owner"/>'s view box into it by its preserveAspectRatio (default: whole, centred).
+        /// </summary>
+        /// <param name="inner">The viewport's size in its own units, for % inside it.</param>
+        static Matrix Fit(XElement owner, double x, double y, double width, double height, out (double Width, double Height) inner)
+        {
+            var viewBox = Numbers(Attr(owner, "viewBox"));
+            if (viewBox.Count != 4 || !(viewBox[2] > 0 && viewBox[3] > 0) || !(width > 0 && height > 0))
+            {
+                inner = (width, height);
+                return Matrix.Translate(x, y);
+            }
+            inner = (viewBox[2], viewBox[3]);
+            double sx = width / viewBox[2], sy = height / viewBox[3];
+            var words = (Attr(owner, "preserveAspectRatio") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => w != "defer").ToList();
+            var align = words.FirstOrDefault() ?? "xMidYMid";
+            double tx = x - viewBox[0] * sx, ty = y - viewBox[1] * sy;
+            if (align != "none")
+            {
+                double s = words.Contains("slice") ? Math.Max(sx, sy) : Math.Min(sx, sy);
+                double fx = align.Contains("xMid") ? 0.5 : align.Contains("xMax") ? 1 : 0;
+                double fy = align.Contains("YMid") ? 0.5 : align.Contains("YMax") ? 1 : 0;
+                sx = sy = s;
+                tx = x - viewBox[0] * s + (width - viewBox[2] * s) * fx;
+                ty = y - viewBox[1] * s + (height - viewBox[3] * s) * fy;
+            }
+            return Matrix.Translate(tx, ty) * Matrix.Scale(sx, sy);
+        }
+
+        bool Hidden(XElement element)
         {
             if (Attr(element, "display") == "none" || Attr(element, "visibility") is "hidden" or "collapse")
                 return true;
             var style = Attr(element, "style");
-            return style is not null && Regex.IsMatch(style, @"(^|;)\s*(display\s*:\s*none|visibility\s*:\s*(hidden|collapse))\s*(;|$)");
+            if (style is not null && HidingDeclaration.IsMatch(style))
+                return true;
+            return _hiddenByCss.Count > 0 && _hiddenByCss.Any(s => s.Matches(element));
         }
 
         void Polyline(List<double> numbers, bool closed, Matrix matrix)
@@ -523,6 +645,74 @@ public static class SvgDrawing
 
     static List<double> Numbers(string? text) =>
         text is null ? [] : [.. NumberPattern.Matches(text).Select(m => double.Parse(m.Value, CultureInfo.InvariantCulture))];
+
+    /// <summary>display:none or visibility:hidden in a style attribute or a CSS rule's declarations.</summary>
+    static readonly Regex HidingDeclaration = new(
+        @"(^|;)\s*(display\s*:\s*none|visibility\s*:\s*(hidden|collapse))\s*(!\s*important\s*)?(;|$)",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// A simple CSS selector from a &lt;style&gt; rule that hides: "tag", ".class", "#id" or a mix ("path.hidden").
+    /// Selectors with combinators, attributes or pseudo-classes are ignored, as are rules inside @media and the like.
+    /// </summary>
+    sealed record CssSelector(string? Tag, string? Id, string[] Classes)
+    {
+        static readonly Regex Simple = new(@"^([A-Za-z][\w-]*)?((?:[.#][\w-]+)*)$", RegexOptions.CultureInvariant);
+        static readonly Regex Part = new(@"([.#])([\w-]+)", RegexOptions.CultureInvariant);
+
+        public bool Matches(XElement element)
+        {
+            if (Tag is not null && element.Name.LocalName != Tag)
+                return false;
+            if (Id is not null && Attr(element, "id") != Id)
+                return false;
+            if (Classes.Length == 0)
+                return true;
+            var classes = (Attr(element, "class") ?? "").Split((char[])[' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
+            return Classes.All(classes.Contains);
+        }
+
+        /// <summary>The selectors of the top-level rules in <paramref name="css"/> that set display:none or visibility:hidden.</summary>
+        public static List<CssSelector> Hiding(string css)
+        {
+            var hiding = new List<CssSelector>();
+            css = Regex.Replace(css, @"/\*.*?\*/", "", RegexOptions.Singleline);
+            int at = 0;
+            while (at < css.Length)
+            {
+                int open = css.IndexOf('{', at);
+                if (open < 0)
+                    break;
+                int depth = 1, end = open + 1;
+                for (; end < css.Length && depth > 0; end++)
+                    depth += css[end] == '{' ? 1 : css[end] == '}' ? -1 : 0;
+                var selectors = css[at..open];
+                var body = css[(open + 1)..Math.Max(open + 1, end - 1)];
+                at = end;
+                // "@import x; .a {": only what follows the last statement belongs to the rule.
+                if (selectors.LastIndexOf(';') is var semicolon and >= 0)
+                    selectors = selectors[(semicolon + 1)..];
+                if (selectors.TrimStart().StartsWith('@') || !HidingDeclaration.IsMatch(body.Trim()))
+                    continue;
+                foreach (var selector in selectors.Split(','))
+                    if (Parse(selector.Trim()) is { } parsed)
+                        hiding.Add(parsed);
+            }
+            return hiding;
+        }
+
+        static CssSelector? Parse(string selector)
+        {
+            var match = Simple.Match(selector);
+            if (!match.Success || selector.Length == 0)
+                return null;
+            var parts = Part.Matches(match.Groups[2].Value);
+            return new CssSelector(
+                match.Groups[1].Success && match.Groups[1].Length > 0 ? match.Groups[1].Value : null,
+                parts.Where(p => p.Groups[1].Value == "#").Select(p => p.Groups[2].Value).FirstOrDefault(),
+                [.. parts.Where(p => p.Groups[1].Value == ".").Select(p => p.Groups[2].Value)]);
+        }
+    }
 
     /// <summary>An affine transform as SVG writes it: x' = a x + c y + e, y' = b x + d y + f.</summary>
     readonly record struct Matrix(double A, double B, double C, double D, double E, double F)

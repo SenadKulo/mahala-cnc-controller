@@ -224,4 +224,79 @@ public class SvgDrawingTests
         Assert.True(program.CanRun);
         Assert.Empty(program.Issues);
     }
+
+    static double PathWidth(IReadOnlyList<PathPoint> path) => path.Max(p => p.X) - path.Min(p => p.X);
+
+    [Fact]
+    public void Use_CopiesShapesAndSymbols()
+    {
+        var import = SvgDrawing.Parse(Svg(
+            "<defs><path id=\"dash\" d=\"M0,0 H10\" /><symbol id=\"box\" viewBox=\"0 0 1 1\"><rect width=\"1\" height=\"1\" /></symbol></defs>" +
+            "<use href=\"#dash\" /><use href=\"#dash\" x=\"20\" />" +
+            "<use xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:href=\"#box\" x=\"40\" width=\"5\" height=\"5\" />"));
+
+        Assert.Equal(0, import.Skipped);
+        Assert.Equal(3, import.Drawing.Paths.Count);
+        // Dashes at 0-10 and 20-30, the symbol's square scaled to 5 mm at 40.
+        Assert.Equal(45, import.Drawing.Width, 6);
+        Assert.Equal(5, import.Drawing.Height, 6);
+        Assert.Equal([5.0, 10, 10], import.Drawing.Paths.Select(p => Math.Round(PathWidth(p), 6)).Order());
+    }
+
+    [Fact]
+    public void Use_PointingIntoItselfOrNowhere_IsSkipped()
+    {
+        var import = SvgDrawing.Parse(Svg(
+            "<g id=\"loop\"><line x1=\"0\" y1=\"0\" x2=\"10\" y2=\"0\" /><use href=\"#loop\" x=\"5\" /></g>" +
+            "<use href=\"#missing\" /><use href=\"other.svg#loop\" />"));
+
+        // The group once, its copy once (inside the copy, the use of itself stops).
+        Assert.Equal(2, import.Drawing.Paths.Count);
+        Assert.Equal(3, import.Skipped);
+    }
+
+    [Fact]
+    public void Use_CopiesOfCopies_StopAtALimit()
+    {
+        // 10 to the 6th copies if followed to the end.
+        var content = "<defs><line id=\"l0\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\" />";
+        for (int level = 1; level <= 6; level++)
+            content += $"<g id=\"l{level}\">" + string.Concat(Enumerable.Range(0, 10).Select(_ => $"<use href=\"#l{level - 1}\" />")) + "</g>";
+        var import = SvgDrawing.Parse(Svg(content + "</defs><use href=\"#l6\" />"));
+
+        Assert.InRange(import.Drawing.Paths.Count, 1, 10000);
+        Assert.True(import.Skipped > 0);
+    }
+
+    [Fact]
+    public void CssRules_HideByClassIdAndTag()
+    {
+        var import = SvgDrawing.Parse(Svg(
+            "<style><![CDATA[/* Inkscape */ .hide, #gone { display: none } circle.ghost{visibility:hidden !important} .red { stroke: red }" +
+            " @media print { .shown { display: none } }]]></style>" +
+            "<rect class=\"red hide\" width=\"90\" height=\"40\" /><rect id=\"gone\" width=\"90\" height=\"40\" />" +
+            "<circle class=\"ghost\" cx=\"50\" cy=\"25\" r=\"20\" /><circle class=\"red\" cx=\"5\" cy=\"5\" r=\"5\" />" +
+            "<line class=\"shown\" x1=\"0\" y1=\"0\" x2=\"20\" y2=\"0\" />"));
+
+        // Left: the red circle (not hidden) and the line (hidden only when printing).
+        Assert.Equal(2, import.Drawing.Paths.Count);
+        Assert.Equal(20, import.Drawing.Width, 6);
+        Assert.InRange(import.Drawing.Height, 10 - 0.03, 10 + 1e-9);
+    }
+
+    [Fact]
+    public void NestedSvg_FitsItsViewBoxIntoItsSize()
+    {
+        var import = SvgDrawing.Parse(Svg(
+            "<line x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\" />" +
+            "<svg x=\"10\" y=\"10\" width=\"20\" height=\"10\" viewBox=\"0 0 10 10\"><rect width=\"10\" height=\"10\" /></svg>" +
+            "<svg x=\"40\" y=\"10\" width=\"20\" height=\"10\" viewBox=\"0 0 10 10\" preserveAspectRatio=\"none\"><rect width=\"10\" height=\"10\" /></svg>"));
+
+        // Kept square and centred (15-25), or stretched to the whole size (40-60).
+        Assert.Equal([1.0, 10, 20], import.Drawing.Paths.Select(p => Math.Round(PathWidth(p), 6)).Order());
+        Assert.Equal(60, import.Drawing.Width, 6);
+        Assert.Equal(20, import.Drawing.Height, 6);
+        var square = import.Drawing.Paths.Single(p => Math.Abs(PathWidth(p) - 10) < 1e-6);
+        Assert.Equal(15, square.Min(p => p.X), 6);
+    }
 }

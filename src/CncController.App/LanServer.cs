@@ -202,6 +202,13 @@ public sealed class LanServer : IAsyncDisposable
 
     void Configure(WebApplication app, CancellationToken stopping)
     {
+        // The page changes with every version of the program: the phone asks each time whether its copy is still
+        // the same (a quick 304), instead of keeping an old page and script that don't match the program.
+        app.Use((context, next) =>
+        {
+            context.Response.Headers.CacheControl = "no-cache";
+            return next(context);
+        });
         app.UseWebSockets();
         app.MapGet("/", (HttpContext context) =>
         {

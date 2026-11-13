@@ -691,7 +691,7 @@ public sealed class PageApi
             PositionConfirmed = !session.PositionWaiting,
             RememberedText = rememberedText,
             RememberedTone = rememberedTone,
-            LaserOn = session.LaserOn,
+            LaserOn = session.LaserLit,
             LaserPower = session.UsesLaserPower ? session.Settings.LaserPower : null,
             LaserPowerMax = session.UsesLaserPower ? session.LaserPowerMax : null,
             FileName = session.ProgramPath is { } path ? Path.GetFileName(path) : null,

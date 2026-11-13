@@ -184,6 +184,24 @@ public sealed class MachineSessionTests : IDisposable
     }
 
     [Fact]
+    public void Job_LaserLit_FollowsTheJobsM3AndM5()
+    {
+        ConnectSimulator();
+        WaitUntil(() => _session.PositionConfirmed);
+        LoadSquares(100);
+        _ui.Invoke(() => _session.StartJob());
+
+        // The squares are cut with M3: lit while the CNC moves along them, though no button turned the laser on.
+        WaitUntil(() => _session.Job!.CompletedCount > 30 && _session.LastStatus?.State == MachineState.Run && _session.LaserLit);
+        Assert.False(_ui.Invoke(() => _session.LaserOn));
+        Assert.True(_ui.Invoke(() => new PageApi(_session, _ui.Post, Path.GetTempPath()).BuildSnapshot().LaserOn));
+
+        // M5 at the end, then the rapid away and Idle.
+        WaitUntil(() => _session.Job?.State == JobState.Completed && _session.LastStatus?.State == MachineState.Idle);
+        Assert.False(_ui.Invoke(() => _session.LaserLit));
+    }
+
+    [Fact]
     public void RestartDuringJob_AutoResume_ContinuesAndCompletes()
     {
         _settings.AutoResume = true;

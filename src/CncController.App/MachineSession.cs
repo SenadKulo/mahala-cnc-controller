@@ -208,8 +208,16 @@ public sealed class MachineSession : IDisposable
     public Position? RememberedPosition => _memory.WorkPosition;
     public DateTime? RememberedAt => _memory.SavedAt;
 
-    /// <summary>The laser as we last switched it; Grbl 0.8c doesn't report it.</summary>
+    /// <summary>The laser as we last switched it with the buttons; Grbl 0.8c doesn't report it.</summary>
     public bool LaserOn { get; private set; }
+
+    /// <summary>
+    /// What the status bar shows: during a job, whether the job has the laser lit where the CNC is now
+    /// (<see cref="JobLaser"/>); otherwise <see cref="LaserOn"/>.
+    /// </summary>
+    public bool LaserLit => JobActive && _jobLaser is not null ? _jobLaserLit && !_job!.IsBreakSettled : LaserOn;
+    JobLaser? _jobLaser;
+    bool _jobLaserLit;
 
     public PositionQuestion? PendingQuestion { get; private set; }
 
@@ -474,8 +482,28 @@ public sealed class MachineSession : IDisposable
         LastStatus = status;
         if (_linesUnanswered == 0)
             _statusCurrent = true;
+        TrackJobLaser(status);
         TrackPosition(status);
         StatusReceived?.Invoke(status);
+    }
+
+    void TrackJobLaser(GrblStatus status)
+    {
+        if (!JobActive || _jobLaser is not { } laser || status.WorkPosition is not { } work)
+            return;
+        int completed = _job!.CompletedCount;
+        // $32=1 (Grbl 1.1 laser mode): lit only while cutting with G1/G2/G3, dark while standing or on G0.
+        bool laserMode = GrblSettingValue(32) == 1;
+        _jobLaserLit = status.State switch
+        {
+            // Nothing waits in the planner, so every accepted line has run.
+            MachineState.Idle => !laserMode && laser.IsOnAfter(completed - 1),
+            MachineState.Run => laser.IsOnAfter(laser.ExecutingLine(completed, work, out var kind))
+                && (!laserMode || kind == SegmentKind.Cut),
+            // Feed hold keeps the laser on in 0.8c, so it burns one spot: worth seeing.
+            MachineState.Hold or MachineState.Queue => !laserMode && laser.IsOnAfter(laser.ExecutingLine(completed, work, out _)),
+            _ => false,
+        };
     }
 
     // ----- Position -----
@@ -1135,6 +1163,8 @@ public sealed class MachineSession : IDisposable
 
         _job?.Dispose();
         var job = _job = new GCodeJob(_grbl, Program, resume, LaserPowerSetup());
+        _jobLaser = new JobLaser(Program, Toolpath!, job.StartIndex);
+        _jobLaserLit = false;
         // A replaced job's late events are ignored.
         job.StateChanged += state => _post(() => { if (job == _job) OnJobStateChanged(job, state); });
         job.ProgressChanged += completed => _post(() => { if (job == _job) OnProgress(job); });

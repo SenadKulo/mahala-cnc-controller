@@ -96,7 +96,10 @@ public sealed class LanServerTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, (await _http.GetAsync(At("/ping"))).StatusCode);
         await Assert.ThrowsAsync<WebSocketException>(() => OpenSocket());
         // The page's files themselves are no secret.
-        Assert.Equal(HttpStatusCode.OK, (await _http.GetAsync(At("/css/site.css"))).StatusCode);
+        var css = await _http.GetAsync(At("/css/site.css"));
+        Assert.Equal(HttpStatusCode.OK, css.StatusCode);
+        // Checked again every time, so a phone doesn't keep the page of an older version.
+        Assert.True(css.Headers.CacheControl?.NoCache);
     }
 
     [Fact]

@@ -4,8 +4,9 @@ namespace GrblCore.Drawing;
 
 /// <summary>
 /// G-code that burns a <see cref="LaserDrawing"/>: for each path a rapid move to its start, the laser on (M3),
-/// G1 along it, the laser off (M5); at the end back to 0,0,0. Coordinates are in mm, absolute, from the work zero; the laser power (S) for
-/// Grbl 0.9+ is sent by the program before the job, as for any file.
+/// G1 along it, the laser off (M5); at the end back to X0 Y0. Coordinates are in mm, absolute, from the work zero; the laser power (S) for
+/// Grbl 0.9+ is sent by the program before the job, as for any file. No Z and no S anywhere: a file with them is taken for
+/// an ArtCAM file (<see cref="ArtCamLaserConverter.NeedsConversion"/>), so opening it again would offer a conversion.
 /// </summary>
 public static class LaserGCode
 {
@@ -48,9 +49,8 @@ public static class LaserGCode
         }
         if (at is not null)
             lines.Add("M5");
-        // Back to the work zero with the laser off, like "Idi na 0,0,0": X/Y first, then Z (the drawing never moves Z).
+        // Back to the work zero with the laser off. Z is never moved, so it is still where the job started.
         lines.Add("G0 X0 Y0");
-        lines.Add("G0 Z0");
         return lines;
     }
 
