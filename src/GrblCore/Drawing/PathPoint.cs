@@ -21,4 +21,14 @@ public sealed record LaserDrawing(IReadOnlyList<IReadOnlyList<PathPoint>> Paths,
             [.. paths.Select(path => (IReadOnlyList<PathPoint>)[.. path.Select(p => new PathPoint(p.X - minX, p.Y - minY))])],
             maxX - minX, maxY - minY);
     }
+
+    /// <summary>The same drawing <paramref name="factor"/> times bigger (from its bottom-left corner, which stays at 0,0).</summary>
+    public LaserDrawing Scaled(double factor)
+    {
+        if (!(factor > 0) || !double.IsFinite(factor))
+            throw new ArgumentOutOfRangeException(nameof(factor), "The scale must be positive.");
+        return new LaserDrawing(
+            [.. Paths.Select(path => (IReadOnlyList<PathPoint>)[.. path.Select(p => new PathPoint(p.X * factor, p.Y * factor))])],
+            Width * factor, Height * factor);
+    }
 }

@@ -426,4 +426,148 @@ public sealed class MachineSessionTests : IDisposable
         WaitUntil(() => _session.LastStatus is { State: MachineState.Idle, WorkPosition: { } w } && Math.Abs(w.X) + Math.Abs(w.Y) + Math.Abs(w.Z) < 0.01);
         Assert.Equal(JobOutcome.Finished, _ui.Invoke(() => _session.History.Records[^1].Outcome));
     }
+
+    /// <summary>Stands in for Windows' fonts: every character is a 0.6 × 1 square outline, except spaces.</summary>
+    sealed class SquareFont : IFontOutlines
+    {
+        public IReadOnlyList<string> Families => ["Arial", "Times New Roman"];
+
+        public GrblCore.Drawing.LaserDrawing? Layout(string family, string text, double capHeight)
+        {
+            if (!Families.Contains(family))
+                return null;
+            var paths = new List<IReadOnlyList<GrblCore.Drawing.PathPoint>>();
+            var lines = text.Split('\n');
+            for (int row = 0; row < lines.Length; row++)
+                for (int i = 0; i < lines[row].Length; i++)
+                    if (lines[row][i] != ' ')
+                    {
+                        double x = i * capHeight, y = -row * 1.5 * capHeight, w = 0.6 * capHeight;
+                        paths.Add([new(x, y), new(x + w, y), new(x + w, y + capHeight), new(x, y + capHeight), new(x, y)]);
+                    }
+            return GrblCore.Drawing.LaserDrawing.FromPaths(paths);
+        }
+    }
+
+    [Fact]
+    public void EngraveText_WithAFontOfTheComputer_MakesOutlines()
+    {
+        var uploads = Path.Combine(Path.GetTempPath(), $"engrave-font-{Guid.NewGuid():N}");
+        var api = new PageApi(_session, _ui.Post, uploads, new SquareFont());
+        ConnectSimulator();
+        WaitUntil(() => _session.PositionConfirmed);
+
+        CncController.Remote.CommandReply Engrave(string text, string font) =>
+            _ui.Invoke(() => api.Execute(new CncController.Remote.RemoteCommand
+            {
+                Name = CncController.Remote.RemoteCommands.EngraveText, Text = text, Font = font, Number = 10, Feeds = [3000], Passes = 1,
+            }, RemoteLink.Origin));
+
+        var fonts = _ui.Invoke(() => api.Execute(new CncController.Remote.RemoteCommand { Name = CncController.Remote.RemoteCommands.Fonts }, RemoteLink.Origin));
+        Assert.True(fonts.Done);
+        Assert.Equal("Arial\nTimes New Roman", fonts.Text);
+
+        Assert.False(Engrave("Mahala", "Comic Sans").Done);
+
+        // A computer's font has more characters than the single-stroke one: € is fine.
+        var reply = Engrave("€ 5\nAB", "Arial");
+        Assert.True(reply.Done, reply.Text);
+        Assert.Equal("Arial", _settings.TextFont);
+        Assert.Equal("Arial", _ui.Invoke(api.BuildSnapshot).TextFont);
+        // 2 squares on the first line, 2 on the second: each burned as its own closed outline.
+        var program = File.ReadAllLines(_ui.Invoke(() => _session.ProgramPath)!);
+        Assert.Equal(4, program.Count(l => l.StartsWith("M3")));
+
+        _ui.Invoke(() => _session.StartJob());
+        WaitUntil(() => _session.Job?.State == JobState.Completed, tick: true);
+        Assert.DoesNotContain(_log, line => line.Contains("error", StringComparison.OrdinalIgnoreCase));
+
+        // Back to the single-stroke font: an empty font name.
+        Assert.True(Engrave("ABC", "").Done);
+        Assert.Equal("", _settings.TextFont);
+    }
+
+    [Fact]
+    public void Fonts_WithoutTheComputersFonts_IsAnEmptyList()
+    {
+        var api = new PageApi(_session, _ui.Post, Path.GetTempPath());
+        var reply = _ui.Invoke(() => api.Execute(new CncController.Remote.RemoteCommand { Name = CncController.Remote.RemoteCommands.Fonts }, null));
+        Assert.True(reply.Done);
+        Assert.Equal("", reply.Text);
+    }
+
+    [Fact]
+    public void EngraveQr_MakesAFileThatRunsOnTheSimulator()
+    {
+        var uploads = Path.Combine(Path.GetTempPath(), $"qr-{Guid.NewGuid():N}");
+        var api = new PageApi(_session, _ui.Post, uploads);
+        ConnectSimulator();
+        WaitUntil(() => _session.PositionConfirmed);
+
+        CncController.Remote.CommandReply Qr(string text, double size = 10, double spacing = 1, int feed = 10000) =>
+            _ui.Invoke(() => api.Execute(new CncController.Remote.RemoteCommand
+            {
+                Name = CncController.Remote.RemoteCommands.EngraveQr, Text = text, Number = size, Spacing = spacing, Feeds = [feed], Passes = 1,
+            }, RemoteLink.Origin));
+
+        Assert.False(Qr("   ").Done);
+        Assert.False(Qr("mahalaworkshop.com", size: 1).Done);
+        Assert.False(Qr("mahalaworkshop.com", spacing: 0).Done);
+
+        var reply = Qr("https://mahalaworkshop.com/");
+        Assert.True(reply.Done, reply.Text);
+        Assert.Contains("10 × 10 mm", reply.Text);
+        Assert.Equal("QR - mahalaworkshop.com.tap", Path.GetFileName(_ui.Invoke(() => _session.ProgramPath)));
+        Assert.Equal(("https://mahalaworkshop.com/", 10.0, 1.0), (_settings.QrText, _settings.QrSize, _settings.QrSpacing));
+        Assert.Equal("https://mahalaworkshop.com/", _ui.Invoke(api.BuildSnapshot).QrText);
+
+        _ui.Invoke(() => _session.StartJob());
+        WaitUntil(() => _session.Job?.State == JobState.Completed, tick: true);
+        Assert.DoesNotContain(_log, line => line.Contains("error", StringComparison.OrdinalIgnoreCase));
+        Assert.False(_session.Simulator!.LaserOn);
+    }
+
+    [Fact]
+    public void Svg_UploadedThenConverted_RunsOnTheSimulator()
+    {
+        var uploads = Path.Combine(Path.GetTempPath(), $"svg-{Guid.NewGuid():N}");
+        var api = new PageApi(_session, _ui.Post, uploads);
+        ConnectSimulator();
+        WaitUntil(() => _session.PositionConfirmed);
+
+        // Not usable: only text. Told so, nothing loaded.
+        var textOnly = _ui.Invoke(() => api.LoadUploaded(new CncController.Remote.UploadedFile("tekst.svg",
+            System.Text.Encoding.UTF8.GetBytes("<svg xmlns=\"http://www.w3.org/2000/svg\"><text>Mahala</text></svg>")), RemoteLink.Origin));
+        Assert.False(textOnly.Done);
+        Assert.Null(textOnly.Svg);
+        Assert.Contains("SVG", textOnly.Text);
+
+        var svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40mm\" height=\"20mm\" viewBox=\"0 0 40 20\">"
+            + "<rect x=\"1\" y=\"1\" width=\"38\" height=\"18\" rx=\"3\" /><circle cx=\"20\" cy=\"10\" r=\"5\" /><text>x</text></svg>";
+        var upload = _ui.Invoke(() => api.LoadUploaded(new CncController.Remote.UploadedFile("pecat.svg", System.Text.Encoding.UTF8.GetBytes(svg)), RemoteLink.Origin));
+
+        // Not loaded yet: the page asks for the size, offering the file's own.
+        Assert.False(upload.Done);
+        Assert.Equal("pecat.svg", upload.FileName);
+        Assert.Equal(new CncController.Remote.SvgFileInfo(38, 18, 2, 1, 400, 1), upload.Svg);
+        Assert.Null(_ui.Invoke(() => _session.ProgramPath));
+
+        CncController.Remote.CommandReply Convert(double width, int feed = 3000, int passes = 1) =>
+            _ui.Invoke(() => api.Execute(new CncController.Remote.RemoteCommand
+            {
+                Name = CncController.Remote.RemoteCommands.ConvertSvg, Text = upload.FileName, Number = width, Feeds = [feed], Passes = passes,
+            }, RemoteLink.Origin));
+
+        Assert.False(Convert(5000).Done);
+        var reply = Convert(76, passes: 2);
+        Assert.True(reply.Done, reply.Text);
+        Assert.Contains("76 × 36 mm", reply.Text);
+        Assert.Equal("pecat - laser.tap", Path.GetFileName(_ui.Invoke(() => _session.ProgramPath)));
+        Assert.Equal((3000, 2), (_settings.SvgFeed, _settings.SvgPasses));
+
+        _ui.Invoke(() => _session.StartJob());
+        WaitUntil(() => _session.Job?.State == JobState.Completed, tick: true);
+        Assert.DoesNotContain(_log, line => line.Contains("error", StringComparison.OrdinalIgnoreCase));
+        Assert.False(_session.Simulator!.LaserOn);
+    }
 }

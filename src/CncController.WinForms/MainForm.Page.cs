@@ -126,7 +126,7 @@ public partial class MainForm
                 core.PostWebMessageAsJson(json);
         }, recentLog: [.. _recentLog]);
         // The window's own dialogs.
-        _page.AddHostMethod("OpenFile", _ => { OpenFile(); return null; });
+        _page.AddHostMethod("OpenFile", _ => OpenFile());
         _page.AddHostMethod("RemoteSettings", _ => { ShowRemoteSettings(); return null; });
         _page.AddHostMethod("LanSettings", _ => { ShowLanSettings(); return null; });
         _page.AddHostMethod("Update", _ => StartUpdate());

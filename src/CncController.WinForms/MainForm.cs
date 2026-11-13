@@ -41,7 +41,7 @@ public partial class MainForm : Form
                 _recentLog.Dequeue();
         };
         _session.Changed += ShowSimulatorIfConnected;
-        _api = new PageApi(_session, OnUi, AppData.UploadFolder);
+        _api = new PageApi(_session, OnUi, AppData.UploadFolder, new WindowsFonts());
         _remote = new RemoteLink(_api, OnUi);
         _remote.StateChanged += ShowPageHost;
         RemoteAccessAvailable = BuiltWithWebsite || (Settings.RemoteUrl is { Length: > 0 } && Settings.RemoteKey is { Length: > 0 });
@@ -150,19 +150,37 @@ public partial class MainForm : Form
 
     string GCodeFilter => "G-code (*.tap;*.nc;*.gcode;*.ngc;*.txt)|*.tap;*.nc;*.gcode;*.ngc;*.txt|" + T("Svi fajlovi", "All files") + " (*.*)|*.*";
 
-    /// <summary>The page's "Otvori fajl...": the system's file dialog, in the last folder.</summary>
-    void OpenFile()
+    string OpenFilter => T("G-code ili SVG", "G-code or SVG") + " (*.tap;*.nc;*.gcode;*.ngc;*.txt;*.svg)|*.tap;*.nc;*.gcode;*.ngc;*.txt;*.svg|"
+        + "SVG (*.svg)|*.svg|" + GCodeFilter;
+
+    /// <summary>
+    /// The page's "Otvori fajl...": the system's file dialog, in the last folder. An SVG file goes the way of one
+    /// uploaded from a browser: the page gets its size and asks for the width, feed and passes (the reply).
+    /// </summary>
+    UploadReply? OpenFile()
     {
         if (!_session.CanLoadFile)
-            return;
-        using var dialog = new OpenFileDialog { Title = T("Otvori G-code fajl", "Open a G-code file"), Filter = GCodeFilter };
+            return null;
+        using var dialog = new OpenFileDialog { Title = T("Otvori G-code ili SVG fajl", "Open a G-code or SVG file"), Filter = OpenFilter };
         if (Directory.Exists(Settings.LastFolder))
             dialog.InitialDirectory = Settings.LastFolder;
         if (dialog.ShowDialog(this) != DialogResult.OK)
-            return;
+            return null;
         Settings.LastFolder = Path.GetDirectoryName(dialog.FileName);
         _session.SaveSettings();
+        if (Path.GetExtension(dialog.FileName).Equals(".svg", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                return _api.LoadUploaded(new UploadedFile(Path.GetFileName(dialog.FileName), File.ReadAllBytes(dialog.FileName)), null);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return new UploadReply(false, T("Greška s fajlom: ", "File error: ") + ex.Message);
+            }
+        }
         LoadFile(dialog.FileName);
+        return null;
     }
 
     /// <summary>Loads a G-code file, converting an original ArtCAM file for the laser first.</summary>

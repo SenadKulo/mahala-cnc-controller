@@ -14,7 +14,11 @@ The program speaks English and Bosnian (one click switches the language).
 - **Jobs**: loads G-code, shows the drawing with the finished part and the laser live, a frame to check the job fits
   on the material, and an estimate of the time left. Original ArtCAM files are converted for the laser.
 - **Text engraving**: type a text, the letter height, feed and passes; the program makes the G-code with a
-  single-stroke font (Hershey Simplex) and loads it. No CAM program needed.
+  single-stroke font (Hershey Simplex), or as outlines with any font installed in Windows, and loads it. No CAM
+  program needed.
+- **QR codes**: type an address, the size and line spacing; the squares are filled with back-and-forth lines.
+- **SVG to G-code**: open an SVG (from Inkscape or anywhere), choose the width, feed and passes; the laser follows
+  every outline (paths with curves and arcs, shapes, transforms, real units in mm).
 - **From your phone, in your home network**: the same page on the phone, opened by scanning a QR code; a 6-digit
   code keeps others on the network out. No account, no internet.
 - **Resume after a restart**: if the Arduino restarts in the middle of a job (power glitches, USB), the program

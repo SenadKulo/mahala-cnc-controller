@@ -15,6 +15,9 @@ public sealed class PageApi
     const int MaxFeed = 10_000;
     const int MaxEngraveText = 500, MaxPasses = 20;
     const double MinTextHeight = 1, MaxTextHeight = 500;
+    const double MinSvgSize = 1, MaxSvgSize = 2000;
+    const int MaxQrText = 300;
+    const double MinQrSize = 5, MaxQrSize = 500, MinQrSpacing = 0.05, MaxQrSpacing = 2;
     static readonly TimeSpan GrblSettingsTimeout = TimeSpan.FromSeconds(20);
     static readonly TimeSpan PortListAge = TimeSpan.FromSeconds(5);
     /// <summary>The same limits as the desktop's window.</summary>
@@ -32,12 +35,15 @@ public sealed class PageApi
     DateTime? _alertTime;
     // Asking Windows for the ports on every snapshot (several a second) is wasteful; they rarely change.
     string[] _ports = [];
+    readonly IFontOutlines? _fonts;
     DateTime _portsRead;
 
     /// <param name="post">Runs an action on the session's thread (like the session's own).</param>
     /// <param name="uploadFolder">Where files uploaded from the web page are saved before loading, and the files made on the page (text).</param>
-    public PageApi(MachineSession session, Action<Action> post, string uploadFolder)
+    /// <param name="fonts">The computer's fonts for text engraving; null: only the single-stroke font.</param>
+    public PageApi(MachineSession session, Action<Action> post, string uploadFolder, IFontOutlines? fonts = null)
     {
+        _fonts = fonts;
         _session = session;
         _post = post;
         _uploadFolder = uploadFolder;
@@ -144,7 +150,15 @@ public sealed class PageApi
                 return Convert(origin, file, feeds);
             case RemoteCommands.EngraveText when command.Text is { } text && command.Number is { } height
                 && command.Feeds is [var feed, ..] && command.Passes is { } passes:
-                return EngraveText(origin, text, height, feed, passes);
+                return EngraveText(origin, text, command.Font ?? "", height, feed, passes);
+            case RemoteCommands.Fonts:
+                return new CommandReply(true, string.Join('\n', _fonts?.Families ?? []));
+            case RemoteCommands.ConvertSvg when command.Text is { } file && command.Number is { } width
+                && command.Feeds is [var feed, ..] && command.Passes is { } passes:
+                return ConvertSvg(origin, file, width, feed, passes);
+            case RemoteCommands.EngraveQr when command.Text is { } text && command.Number is { } size && command.Spacing is { } spacing
+                && command.Feeds is [var feed, ..] && command.Passes is { } passes:
+                return EngraveQr(origin, text, size, spacing, feed, passes);
             default:
                 Note(origin, T($"neispravna komanda \"{command.Name}\", nije izvršena.", $"invalid command \"{command.Name}\", not done."));
                 return new CommandReply(false, T("Neispravna komanda.", "Invalid command."));
@@ -287,10 +301,10 @@ public sealed class PageApi
     }
 
     /// <summary>
-    /// Makes a G-code file that engraves <paramref name="text"/> with the single-stroke font (bottom-left corner of
-    /// the text at the work zero), saves it in the upload folder and loads it. The values are offered next time.
+    /// Makes a G-code file that engraves <paramref name="text"/> with the single-stroke font, or the outlines of the
+    /// computer's <paramref name="font"/> when one is given (bottom-left corner of the text at the work zero), saves it in the upload folder and loads it. The values are offered next time.
     /// </summary>
-    CommandReply EngraveText(string? origin, string text, double height, int feed, int passes)
+    CommandReply EngraveText(string? origin, string text, string font, double height, int feed, int passes)
     {
         var what = T("Gravura teksta", "Text engraving");
         if (!_session.CanLoadFile)
@@ -300,7 +314,8 @@ public sealed class PageApi
             return new CommandReply(false, T("Upiši tekst.", "Enter the text."));
         if (text.Length > MaxEngraveText)
             return new CommandReply(false, T($"Tekst je predug (najviše {MaxEngraveText} znakova).", $"The text is too long (at most {MaxEngraveText} characters)."));
-        if (GrblCore.Drawing.TextEngraving.Unsupported(text) is { Length: > 0 } missing)
+        font = font.Trim();
+        if (font.Length == 0 && GrblCore.Drawing.TextEngraving.Unsupported(text) is { Length: > 0 } missing)
             return new CommandReply(false, T($"Ovih znakova nema u fontu: {missing}", $"These characters aren't in the font: {missing}"));
         if (!(height >= MinTextHeight && height <= MaxTextHeight))
             return new CommandReply(false, T($"Visina slova mora biti od {MinTextHeight} do {MaxTextHeight} mm.", $"The letter height must be from {MinTextHeight} to {MaxTextHeight} mm."));
@@ -309,8 +324,16 @@ public sealed class PageApi
         if (passes < 1 || passes > MaxPasses)
             return new CommandReply(false, T($"Broj prolaza mora biti od 1 do {MaxPasses}.", $"The number of passes must be from 1 to {MaxPasses}."));
 
+        GrblCore.Drawing.LaserDrawing drawing;
+        if (font.Length == 0)
+            drawing = GrblCore.Drawing.TextEngraving.Layout(text, height);
+        else if (_fonts?.Layout(font, text, height) is { } outlined)
+            drawing = outlined;
+        else
+            return new CommandReply(false, T($"Font „{font}“ nije instaliran na računaru.", $"The font \"{font}\" isn't installed on the computer."));
+        if (drawing.Paths.Count == 0)
+            return new CommandReply(false, T($"Font „{font}“ nema nijedno od ovih slova.", $"The font \"{font}\" has none of these letters."));
         Note(origin, $"{what}.");
-        var drawing = GrblCore.Drawing.TextEngraving.Layout(text, height);
         var gcode = GrblCore.Drawing.LaserGCode.FromDrawing(drawing, feed, passes);
         var size = FormattableString.Invariant($"{drawing.Width:0.#} × {drawing.Height:0.#} mm");
         // The file's name: the start of the text's first line, so the history and the log say what it was.
@@ -330,15 +353,150 @@ public sealed class PageApi
         }
 
         var settings = _session.Settings;
+        settings.TextFont = font;
         settings.TextHeight = height;
         settings.TextFeed = feed;
         settings.TextPasses = passes;
         _session.SaveSettings();
         var heightText = height.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-        _session.Log(T($"Tekst „{firstLine}“: slova {heightText} mm, {size}, feed {feed}, prolaza {passes}; spremljen: {path}",
-            $"Text \"{firstLine}\": letters {heightText} mm, {size}, feed {feed}, {passes} pass(es); saved: {path}"));
+        var fontText = font.Length > 0 ? font : "Hershey";
+        _session.Log(T($"Tekst „{firstLine}“ ({fontText}): slova {heightText} mm, {size}, feed {feed}, prolaza {passes}; spremljen: {path}",
+            $"Text \"{firstLine}\" ({fontText}): letters {heightText} mm, {size}, feed {feed}, {passes} pass(es); saved: {path}"));
         return _session.LoadFile(path)
             ? new CommandReply(true, T($"Tekst je napravljen i učitan: {size}, donji lijevi ugao na nuli.", $"The text is made and loaded: {size}, bottom-left corner at the zero."))
+            : new CommandReply(false, T("Fajl nije učitan, razlog je u logu.", "File not loaded, the reason is in the log."));
+    }
+
+    /// <summary>
+    /// Makes a G-code file that engraves <paramref name="text"/> as a QR code (bottom-left corner at the work zero),
+    /// saves it in the upload folder and loads it. The values are offered next time.
+    /// </summary>
+    CommandReply EngraveQr(string? origin, string text, double size, double spacing, int feed, int passes)
+    {
+        var what = T("QR kod", "QR code");
+        if (!_session.CanLoadFile)
+            return Refused(origin, what);
+        text = text.Trim();
+        if (text.Length == 0)
+            return new CommandReply(false, T("Upiši adresu ili tekst za QR kod.", "Enter the address or text for the QR code."));
+        if (text.Length > MaxQrText)
+            return new CommandReply(false, T($"Tekst je predug (najviše {MaxQrText} znakova).", $"The text is too long (at most {MaxQrText} characters)."));
+        if (!(size >= MinQrSize && size <= MaxQrSize))
+            return new CommandReply(false, T($"Veličina mora biti od {MinQrSize} do {MaxQrSize} mm.", $"The size must be from {MinQrSize} to {MaxQrSize} mm."));
+        if (!(spacing >= MinQrSpacing && spacing <= MaxQrSpacing))
+            return new CommandReply(false, T($"Razmak linija mora biti od {MinQrSpacing} do {MaxQrSpacing} mm.", $"The line spacing must be from {MinQrSpacing} to {MaxQrSpacing} mm."));
+        if (feed < 1 || feed > MaxFeed)
+            return new CommandReply(false, T($"Feed mora biti cijeli broj od 1 do {MaxFeed}.", $"The feed must be a whole number from 1 to {MaxFeed}."));
+        if (passes < 1 || passes > MaxPasses)
+            return new CommandReply(false, T($"Broj prolaza mora biti od 1 do {MaxPasses}.", $"The number of passes must be from 1 to {MaxPasses}."));
+
+        Note(origin, $"{what}.");
+        var layout = GrblCore.Drawing.QrEngraving.Layout(text, size, spacing);
+        var gcode = GrblCore.Drawing.LaserGCode.FromDrawing(layout.Drawing, feed, passes);
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        var sizeText = size.ToString("0.#", invariant);
+        var moduleText = layout.ModuleSize.ToString("0.##", invariant);
+        var margin = (4 * layout.ModuleSize).ToString("0.#", invariant);
+        // The file's name: the address without its scheme, so the history and the log say what it was.
+        var shortText = System.Text.RegularExpressions.Regex.Replace(text, "^https?://", "").TrimEnd('/');
+        if (shortText.Length > 30)
+            shortText = shortText[..30].TrimEnd() + "…";
+        string path;
+        try
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(string.Join(Environment.NewLine, gcode) + Environment.NewLine);
+            path = SaveUpload(UploadName($"QR - {shortText}.tap"), bytes);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Note(origin, T($"fajl za QR kod nije spremljen: {ex.Message}", $"the QR code's file wasn't saved: {ex.Message}"));
+            return new CommandReply(false, T("Fajl nije spremljen: ", "The file wasn't saved: ") + ex.Message);
+        }
+
+        var settings = _session.Settings;
+        settings.QrText = text;
+        settings.QrSize = size;
+        settings.QrSpacing = spacing;
+        settings.QrFeed = feed;
+        settings.QrPasses = passes;
+        _session.SaveSettings();
+        _session.Log(T($"QR kod „{text}“: {sizeText} × {sizeText} mm, {layout.Modules} × {layout.Modules} kvadratića od {moduleText} mm, feed {feed}, prolaza {passes}; spremljen: {path}",
+            $"QR code \"{text}\": {sizeText} × {sizeText} mm, {layout.Modules} × {layout.Modules} modules of {moduleText} mm, feed {feed}, {passes} pass(es); saved: {path}"));
+        return _session.LoadFile(path)
+            ? new CommandReply(true, T($"QR kod je napravljen i učitan: {sizeText} × {sizeText} mm, kvadratić {moduleText} mm, donji lijevi ugao na nuli. Oko koda ostavi prazno bar {margin} mm.",
+                $"The QR code is made and loaded: {sizeText} × {sizeText} mm, module {moduleText} mm, bottom-left corner at the zero. Leave at least {margin} mm empty around it."))
+            : new CommandReply(false, T("Fajl nije učitan, razlog je u logu.", "File not loaded, the reason is in the log."));
+    }
+
+    /// <summary>Reads an SVG file's outlines; null and the reason (in the program's language) if it can't.</summary>
+    (GrblCore.Drawing.SvgImport? Import, string? Error) ReadSvg(string path)
+    {
+        try
+        {
+            return (GrblCore.Drawing.SvgDrawing.Parse(File.ReadAllText(path)), null);
+        }
+        catch (FormatException ex)
+        {
+            _session.Log(T($"SVG {Path.GetFileName(path)} se ne može koristiti: {ex.Message}", $"SVG {Path.GetFileName(path)} can't be used: {ex.Message}"));
+            return (null, T("U SVG fajlu nema linija koje program može pročitati (tekst pretvori u putanje, slike se ne gravuraju). Detalji su u logu.",
+                "The SVG file has no lines the program can read (convert text to paths; images aren't engraved). Details are in the log."));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (null, T("Fajl se ne može pročitati: ", "The file can't be read: ") + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Makes G-code from an uploaded SVG file's outlines, <paramref name="width"/> mm wide (bottom-left corner at the
+    /// work zero), saves it next to it and loads it. The feed and passes are offered next time.
+    /// </summary>
+    CommandReply ConvertSvg(string? origin, string fileName, double width, int feed, int passes)
+    {
+        var name = UploadName(fileName);
+        var what = T("SVG u G-code", "SVG to G-code");
+        if (!_session.CanLoadFile)
+            return Refused(origin, what);
+        if (feed < 1 || feed > MaxFeed)
+            return new CommandReply(false, T($"Feed mora biti cijeli broj od 1 do {MaxFeed}.", $"The feed must be a whole number from 1 to {MaxFeed}."));
+        if (passes < 1 || passes > MaxPasses)
+            return new CommandReply(false, T($"Broj prolaza mora biti od 1 do {MaxPasses}.", $"The number of passes must be from 1 to {MaxPasses}."));
+        var source = Path.Combine(_uploadFolder, name);
+        if (!File.Exists(source))
+            return new CommandReply(false, T("Fajl više nije na računaru uz CNC; učitaj ga ponovo.", "The file is no longer on the CNC's computer; upload it again."));
+        var (import, error) = ReadSvg(source);
+        if (import is null)
+            return new CommandReply(false, error);
+        var natural = import.Drawing;
+        if (!(natural.Width > 0))
+            return new CommandReply(false, T("Crtež nema širinu (samo uspravne linije).", "The drawing has no width (only vertical lines)."));
+        double height = natural.Height * width / natural.Width;
+        if (!(width >= MinSvgSize && width <= MaxSvgSize && height <= MaxSvgSize))
+            return new CommandReply(false, T($"Širina i visina moraju biti od {MinSvgSize} do {MaxSvgSize} mm.", $"The width and height must be from {MinSvgSize} to {MaxSvgSize} mm."));
+
+        Note(origin, $"{what}.");
+        var drawing = natural.Scaled(width / natural.Width);
+        var gcode = GrblCore.Drawing.LaserGCode.FromDrawing(drawing, feed, passes);
+        var size = FormattableString.Invariant($"{drawing.Width:0.#} × {drawing.Height:0.#} mm");
+        string path;
+        try
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(string.Join(Environment.NewLine, gcode) + Environment.NewLine);
+            path = SaveUpload($"{Path.GetFileNameWithoutExtension(name)} - laser.tap", bytes);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Note(origin, T($"fajl za SVG nije spremljen: {ex.Message}", $"the SVG's file wasn't saved: {ex.Message}"));
+            return new CommandReply(false, T("Fajl nije spremljen: ", "The file wasn't saved: ") + ex.Message);
+        }
+
+        _session.Settings.SvgFeed = feed;
+        _session.Settings.SvgPasses = passes;
+        _session.SaveSettings();
+        _session.Log(T($"SVG {name}: {size}, {drawing.Paths.Count} putanja, feed {feed}, prolaza {passes}; spremljen: {path}",
+            $"SVG {name}: {size}, {drawing.Paths.Count} paths, feed {feed}, {passes} pass(es); saved: {path}"));
+        return _session.LoadFile(path)
+            ? new CommandReply(true, T($"SVG je pretvoren i učitan: {size}, donji lijevi ugao na nuli.", $"The SVG is converted and loaded: {size}, bottom-left corner at the zero."))
             : new CommandReply(false, T("Fajl nije učitan, razlog je u logu.", "File not loaded, the reason is in the log."));
     }
 
@@ -442,6 +600,20 @@ public sealed class PageApi
             Note(origin, T($"fajl {name} nije spremljen: {ex.Message}", $"file {name} not saved: {ex.Message}"));
             return new UploadReply(false, T("Fajl nije spremljen na računaru uz CNC: ", "The file wasn't saved on the CNC's computer: ") + ex.Message);
         }
+        if (Path.GetExtension(name).Equals(".svg", StringComparison.OrdinalIgnoreCase))
+        {
+            var (import, error) = ReadSvg(path);
+            if (import is null)
+                return new UploadReply(false, error);
+            var d = import.Drawing;
+            Note(origin, T($"fajl {name} je SVG ({d.Paths.Count} putanja), čeka veličinu i feed.", $"file {name} is an SVG ({d.Paths.Count} paths), waiting for the size and feed."));
+            var skipped = import.Skipped > 0
+                ? T($" {import.Skipped} elemenata nisu linije (tekst, slike) i neće se gravirati.", $" {import.Skipped} elements aren't lines (text, images) and won't be engraved.")
+                : "";
+            return new UploadReply(false, T("SVG fajl: izaberi širinu, feed i prolaze pa napravi G-code.", "SVG file: choose the width, feed and passes, then make the G-code.") + skipped,
+                Path.GetFileName(path), Svg: new SvgFileInfo(Math.Round(d.Width, 2), Math.Round(d.Height, 2), d.Paths.Count, import.Skipped,
+                    _session.Settings.SvgFeed, _session.Settings.SvgPasses));
+        }
         if (ArtCamLaserConverter.NeedsConversion(lines))
         {
             Note(origin, T($"fajl {name} je originalni ArtCAM fajl, čeka izbor feeda za konverziju.",
@@ -524,9 +696,15 @@ public sealed class PageApi
             LaserPowerMax = session.UsesLaserPower ? session.LaserPowerMax : null,
             FileName = session.ProgramPath is { } path ? Path.GetFileName(path) : null,
             FileInfo = Texts.FileInfo(session),
+            TextFont = session.Settings.TextFont,
             TextHeight = session.Settings.TextHeight,
             TextFeed = session.Settings.TextFeed,
             TextPasses = session.Settings.TextPasses,
+            QrText = session.Settings.QrText,
+            QrSize = session.Settings.QrSize,
+            QrSpacing = session.Settings.QrSpacing,
+            QrFeed = session.Settings.QrFeed,
+            QrPasses = session.Settings.QrPasses,
             Completed = job?.CompletedCount ?? 0,
             Total = job?.TotalCount ?? session.Program?.Lines.Count ?? 0,
             JobActive = session.JobActive,

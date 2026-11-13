@@ -28,8 +28,6 @@
   <ItemGroup>
     <!-- The window shows the website's machine page (WebView2). -->
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
-    <!-- The QR code a phone scans to open the page in the local network (LanDialog). -->
-    <PackageReference Include="QRCoder" Version="1.6.0" />
     <!-- Installing and updating (installer/build.ps1 packs it with the vpk tool of the same version). -->
     <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>

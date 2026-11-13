@@ -299,7 +299,7 @@
             el.disabled = busy || !(online && (el.dataset.can === "always" || snapshot[el.dataset.can]));
         $("connectButton").disabled = busy || !(online && (snapshot.canDisconnect || (snapshot.canConnect && $("port").value)));
         $("port").disabled = $("baud").disabled = busy || !(online && snapshot.canConnect);
-        $("convertStart").disabled = $("textStart").disabled = busy || !(online && snapshot.canLoadFile);
+        $("convertStart").disabled = $("textStart").disabled = $("svgStart").disabled = $("qrStart").disabled = busy || !(online && snapshot.canLoadFile);
         for (const box of document.querySelectorAll("[data-setting]"))
             box.disabled = busy || !online;
         $("uploadButton").disabled = busy || !(online && snapshot.canLoadFile && $("uploadFile").files.length > 0);
@@ -469,9 +469,15 @@
             const reply = await response.json();
             if (reply.done) {
                 closeConvert();
+                closeSvg();
                 showMessage(t("Fajl je učitan.", "The file is loaded."), "success");
                 $("uploadFile").value = "";
+            } else if (reply.svg) {
+                showSvg(reply);
+                showMessage(reply.text, "info");
+                $("uploadFile").value = "";
             } else if (reply.toolpaths) {
+                closeSvg();
                 showConvert(reply);
                 showMessage(reply.text, "info");
                 $("uploadFile").value = "";
@@ -643,6 +649,64 @@
         }
     });
 
+    // ----- SVG -----
+
+    let svgFile = null, svgRatio = 1;
+
+    /// An SVG file uploaded (or opened on the desktop): the width (the height follows), feed and passes.
+    function showSvg(reply) {
+        closeConvert();
+        const svg = reply.svg;
+        svgFile = reply.fileName;
+        svgRatio = svg.width > 0 ? svg.height / svg.width : 1;
+        $("svgFile").textContent = reply.fileName;
+        $("svgInfo").textContent = t(`${formatMm(svg.width)} × ${formatMm(svg.height)} mm, ${svg.paths} putanja.`,
+            `${formatMm(svg.width)} × ${formatMm(svg.height)} mm, ${svg.paths} paths.`);
+        $("svgWidth").value = formatMm(svg.width);
+        $("svgHeight").value = formatMm(svg.height);
+        $("svgFeed").value = svg.feed;
+        $("svgPasses").value = svg.passes;
+        $("svgPanel").classList.remove("d-none");
+        $("svgWidth").focus();
+    }
+
+    function closeSvg() {
+        svgFile = null;
+        $("svgPanel").classList.add("d-none");
+    }
+
+    const formatMm = mm => String(Math.round(mm * 10) / 10);
+
+    $("svgWidth").addEventListener("input", () => {
+        const width = Number($("svgWidth").value);
+        if (width > 0)
+            $("svgHeight").value = formatMm(width * svgRatio);
+    });
+    $("svgHeight").addEventListener("input", () => {
+        const height = Number($("svgHeight").value);
+        if (height > 0 && svgRatio > 0)
+            $("svgWidth").value = formatMm(height / svgRatio);
+    });
+
+    $("svgCancel").addEventListener("click", closeSvg);
+
+    $("svgPanel").addEventListener("submit", async e => {
+        e.preventDefault();
+        const width = Number($("svgWidth").value);
+        const height = Number($("svgHeight").value);
+        const feed = Number($("svgFeed").value);
+        const passes = Number($("svgPasses").value);
+        if (!(width >= 1 && width <= 2000 && height <= 2000) || !Number.isInteger(feed) || feed < 1 || feed > 10000 || !Number.isInteger(passes) || passes < 1 || passes > 20) {
+            showMessage(t("Širina i visina 1-2000 mm, feed cijeli broj 1-10000, prolazi 1-20.", "Width and height 1-2000 mm, feed a whole number 1-10000, passes 1-20."), "warning");
+            return;
+        }
+        const reply = await sendForReply({ name: "ConvertSvg", text: svgFile, number: width, feeds: [feed], passes });
+        if (reply?.done) {
+            closeSvg();
+            showMessage(reply.text || t("SVG je pretvoren i učitan.", "The SVG is converted and loaded."), "success");
+        }
+    });
+
     // ----- Text engraving -----
 
     /// Opens the text form with the values last used (kept by the desktop), or closes it.
@@ -652,6 +716,7 @@
             panel.classList.add("d-none");
             return;
         }
+        loadFonts();
         $("textHeight").value = snapshot?.textHeight || 10;
         $("textFeed").value = snapshot?.textFeed || 400;
         $("textPasses").value = snapshot?.textPasses || 1;
@@ -659,11 +724,34 @@
         $("textInput").focus();
     });
 
+    let fontsLoaded = false;
+
+    /// Fills the font list with the desktop computer's fonts, once; the single-stroke font stays first. A site that
+    /// doesn't know the request yet leaves just that one.
+    async function loadFonts() {
+        const select = $("textFont");
+        const wanted = snapshot?.textFont || "";
+        if (!fontsLoaded) {
+            try {
+                const reply = await connection.invoke("Command", { name: "Fonts" });
+                if (reply?.done && reply.text) {
+                    fontsLoaded = true;
+                    for (const name of reply.text.split("\n"))
+                        select.add(new Option(name, name));
+                }
+            } catch {
+                // Only the single-stroke font.
+            }
+        }
+        select.value = [...select.options].some(o => o.value === wanted) ? wanted : "";
+    }
+
     $("textCancel").addEventListener("click", () => $("textPanel").classList.add("d-none"));
 
     $("textPanel").addEventListener("submit", async e => {
         e.preventDefault();
         const text = $("textInput").value;
+        const font = $("textFont").value;
         const height = Number($("textHeight").value);
         const feed = Number($("textFeed").value);
         const passes = Number($("textPasses").value);
@@ -675,11 +763,53 @@
             showMessage(t("Visina 1-500 mm, feed cijeli broj 1-10000, prolazi 1-20.", "Height 1-500 mm, feed a whole number 1-10000, passes 1-20."), "warning");
             return;
         }
-        const reply = await sendForReply({ name: "EngraveText", text, number: height, feeds: [feed], passes });
+        const reply = await sendForReply({ name: "EngraveText", text, font, number: height, feeds: [feed], passes });
         if (reply?.done) {
             // The text stays in the box, for a change and another try.
             $("textPanel").classList.add("d-none");
             showMessage(reply.text || t("Tekst je napravljen i učitan.", "The text is made and loaded."), "success");
+        }
+    });
+
+    // ----- QR code -----
+
+    /// Opens the QR form with the values last used (kept by the desktop), or closes it.
+    $("qrOpen").addEventListener("click", () => {
+        const panel = $("qrPanel");
+        if (!panel.classList.contains("d-none")) {
+            panel.classList.add("d-none");
+            return;
+        }
+        $("qrInput").value = snapshot?.qrText || "https://mahalaworkshop.com";
+        $("qrSize").value = snapshot?.qrSize || 25;
+        $("qrSpacing").value = snapshot?.qrSpacing || 0.2;
+        $("qrFeed").value = snapshot?.qrFeed || 1000;
+        $("qrPasses").value = snapshot?.qrPasses || 1;
+        panel.classList.remove("d-none");
+        $("qrInput").focus();
+    });
+
+    $("qrCancel").addEventListener("click", () => $("qrPanel").classList.add("d-none"));
+
+    $("qrPanel").addEventListener("submit", async e => {
+        e.preventDefault();
+        const text = $("qrInput").value.trim();
+        const size = Number($("qrSize").value);
+        const spacing = Number($("qrSpacing").value);
+        const feed = Number($("qrFeed").value);
+        const passes = Number($("qrPasses").value);
+        if (!text) {
+            showMessage(t("Upiši adresu ili tekst za QR kod.", "Enter the address or text for the QR code."), "warning");
+            return;
+        }
+        if (!(size >= 5 && size <= 500) || !(spacing >= 0.05 && spacing <= 2) || !Number.isInteger(feed) || feed < 1 || feed > 10000 || !Number.isInteger(passes) || passes < 1 || passes > 20) {
+            showMessage(t("Veličina 5-500 mm, razmak linija 0,05-2 mm, feed cijeli broj 1-10000, prolazi 1-20.", "Size 5-500 mm, line spacing 0.05-2 mm, feed a whole number 1-10000, passes 1-20."), "warning");
+            return;
+        }
+        const reply = await sendForReply({ name: "EngraveQr", text, number: size, spacing, feeds: [feed], passes });
+        if (reply?.done) {
+            $("qrPanel").classList.add("d-none");
+            showMessage(reply.text || t("QR kod je napravljen i učitan.", "The QR code is made and loaded."), "success");
         }
     });
 
@@ -957,7 +1087,22 @@
             }
         };
         // Its own dialogs, as before: choosing the file, converting an ArtCAM file, remote access, the local network.
-        $("openFile").addEventListener("click", hostAction("OpenFile"));
+        // An SVG comes back with its size, for the same form as one uploaded on the website.
+        const openFile = async e => {
+            e?.preventDefault();
+            try {
+                const reply = await connection.invoke("OpenFile");
+                if (reply?.svg) {
+                    showSvg(reply);
+                    showMessage(reply.text, "info");
+                } else if (reply && reply.done === false && reply.text) {
+                    showMessage(reply.text, "warning");
+                }
+            } catch {
+                showMessage(t("Nije urađeno.", "Not done."), "danger");
+            }
+        };
+        $("openFile").addEventListener("click", openFile);
         $("remoteSettings").addEventListener("click", hostAction("RemoteSettings"));
         $("lanSettings").addEventListener("click", hostAction("LanSettings"));
         $("updateLink").addEventListener("click", hostAction("Update"));
@@ -982,7 +1127,7 @@
             else if (e.key.toLowerCase() === "o" && e.ctrlKey) {
                 e.preventDefault();
                 if (!e.repeat && can("canLoadFile"))
-                    hostAction("OpenFile")();
+                    openFile();
                 return;
             } else if (typing)
                 return;

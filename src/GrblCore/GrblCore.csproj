@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <PackageReference Include="System.IO.Ports" Version="10.0.13" />
+    <!-- QR codes: engraved (Drawing/QrEngraving), and the one a phone scans for the local network (LanDialog). MIT. -->
+    <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
 
 </Project>

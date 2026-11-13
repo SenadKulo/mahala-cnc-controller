@@ -61,10 +61,22 @@ public sealed class AppSettings
     /// <summary>Feed for every following toolpath (cutting), mm/min.</summary>
     public int OtherToolpathsFeed { get; set; } = 80;
 
-    /// <summary>Text engraving: height of a capital letter (mm), feed (mm/min) and passes, as last used.</summary>
+    /// <summary>Text engraving as last used: a font of the computer (empty: the single-stroke font), height of a capital letter (mm), feed (mm/min) and passes.</summary>
+    public string TextFont { get; set; } = "";
     public double TextHeight { get; set; } = 10;
     public int TextFeed { get; set; } = 400;
     public int TextPasses { get; set; } = 1;
+
+    /// <summary>SVG files: feed (mm/min) and passes, as last used.</summary>
+    public int SvgFeed { get; set; } = 400;
+    public int SvgPasses { get; set; } = 1;
+
+    /// <summary>QR code: text, side (mm), distance between burned lines (mm), feed (mm/min) and passes, as last used.</summary>
+    public string QrText { get; set; } = "https://mahalaworkshop.com";
+    public double QrSize { get; set; } = 25;
+    public double QrSpacing { get; set; } = 0.2;
+    public int QrFeed { get; set; } = 1000;
+    public int QrPasses { get; set; } = 1;
 
     /// <summary>Last chosen manual jog step, mm.</summary>
     public double JogStep { get; set; } = 1;

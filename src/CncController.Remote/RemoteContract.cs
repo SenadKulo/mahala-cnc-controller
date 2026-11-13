@@ -81,10 +81,25 @@ public static class RemoteCommands
     /// <summary>Converts the uploaded ArtCAM file <see cref="RemoteCommand.Text"/> for the laser with <see cref="RemoteCommand.Feeds"/> and loads it.</summary>
     public const string Convert = "Convert";
     /// <summary>
-    /// Engraves <see cref="RemoteCommand.Text"/> with the single-stroke font: capitals <see cref="RemoteCommand.Number"/> mm
+    /// Engraves <see cref="RemoteCommand.Text"/> with the single-stroke font, or as outlines of the computer's font
+    /// <see cref="RemoteCommand.Font"/> (one of <see cref="Fonts"/>): capitals <see cref="RemoteCommand.Number"/> mm
     /// high, at feed <see cref="RemoteCommand.Feeds"/>[0], <see cref="RemoteCommand.Passes"/> times; made into a file and loaded.
     /// </summary>
     public const string EngraveText = "EngraveText";
+    /// <summary>The fonts installed on the desktop's computer, for <see cref="EngraveText"/>: the reply's text, one name per line (empty when there are none).</summary>
+    public const string Fonts = "Fonts";
+    /// <summary>
+    /// Burns the outlines of the uploaded SVG file <see cref="RemoteCommand.Text"/>: <see cref="RemoteCommand.Number"/> mm
+    /// wide (the height in proportion), at feed <see cref="RemoteCommand.Feeds"/>[0], <see cref="RemoteCommand.Passes"/> times;
+    /// made into a file and loaded.
+    /// </summary>
+    public const string ConvertSvg = "ConvertSvg";
+    /// <summary>
+    /// Engraves a QR code of <see cref="RemoteCommand.Text"/> (an address or any text): <see cref="RemoteCommand.Number"/> mm
+    /// a side, filled with lines <see cref="RemoteCommand.Spacing"/> mm apart, at feed <see cref="RemoteCommand.Feeds"/>[0],
+    /// <see cref="RemoteCommand.Passes"/> times; made into a file and loaded.
+    /// </summary>
+    public const string EngraveQr = "EngraveQr";
     /// <summary>Closes the loaded program (not during a job).</summary>
     public const string CloseFile = "CloseFile";
     /// <summary>Port speed for the next connect (<see cref="RemoteCommand.Number"/>, one of <see cref="MachineSnapshot.BaudRates"/>).</summary>
@@ -98,7 +113,7 @@ public static class RemoteCommands
     [
         Pause, PauseLaserOff, Resume, Stop, Reset, Start, Frame, ResumeFrom, Jog, Laser, Unlock,
         SetZero, RestorePosition, GoToZero, AutoResume, CompressorPause, Answer, Send,
-        Connect, Disconnect, Compressors, Convert, EngraveText, CloseFile, Baud, LaserPower, Language,
+        Connect, Disconnect, Compressors, Convert, EngraveText, Fonts, ConvertSvg, EngraveQr, CloseFile, Baud, LaserPower, Language,
     ];
 }
 
@@ -115,6 +130,8 @@ public sealed record RemoteCommand
     public double? Number { get; init; }
     public int[]? Feeds { get; init; }
     public int? Passes { get; init; }
+    public double? Spacing { get; init; }
+    public string? Font { get; init; }
 }
 
 /// <summary>The desktop's answer to a command: done, or why not (in the program's language, ready to show).</summary>
@@ -132,8 +149,15 @@ public sealed record UploadedFile(string Name, byte[] Content);
 /// <summary>
 /// The desktop's answer to an upload. An original ArtCAM file isn't loaded: it comes back as <see cref="FileName"/>
 /// with its <see cref="Toolpaths"/>, to be converted with a feed per toolpath (<see cref="RemoteCommands.Convert"/>).
+/// An SVG file comes back with <see cref="Svg"/>, to be made into G-code at a chosen size (<see cref="RemoteCommands.ConvertSvg"/>).
 /// </summary>
-public sealed record UploadReply(bool Done, string? Text = null, string? FileName = null, ArtCamToolpathInfo[]? Toolpaths = null);
+public sealed record UploadReply(bool Done, string? Text = null, string? FileName = null, ArtCamToolpathInfo[]? Toolpaths = null, SvgFileInfo? Svg = null);
+
+/// <summary>
+/// An SVG file's outlines: its own size (mm), how many paths, how many elements that aren't lines were left out
+/// (text, images), and the feed and passes offered (the last ones used).
+/// </summary>
+public sealed record SvgFileInfo(double Width, double Height, int Paths, int Skipped, int Feed, int Passes);
 
 /// <summary>A toolpath of an ArtCAM file, with the feed offered for it (the last one used, mm/min).</summary>
 public sealed record ArtCamToolpathInfo(int Number, string? Tool, int Contours, int Passes, int Feed);
@@ -189,10 +213,18 @@ public sealed record MachineSnapshot
     public string? FileName { get; init; }
     public string? FileInfo { get; init; }
 
-    /// <summary>Text engraving as last used: capital height (mm), feed (mm/min), passes.</summary>
+    /// <summary>Text engraving as last used: font ("" the single-stroke one), capital height (mm), feed (mm/min), passes.</summary>
+    public string TextFont { get; init; } = "";
     public double TextHeight { get; init; }
     public int TextFeed { get; init; }
     public int TextPasses { get; init; }
+
+    /// <summary>QR code as last used: text, side (mm), line spacing (mm), feed (mm/min), passes.</summary>
+    public string QrText { get; init; } = "";
+    public double QrSize { get; init; }
+    public double QrSpacing { get; init; }
+    public int QrFeed { get; init; }
+    public int QrPasses { get; init; }
 
     /// <summary>Lines Grbl accepted so far; the toolpath is drawn as done up to this line index.</summary>
     public int Completed { get; init; }
